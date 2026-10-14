@@ -1,0 +1,321 @@
+.banking-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #080e1e;
+  color: #f8fafc;
+}
+
+/* Topbar */
+.banking-topbar {
+  height: 70px;
+  background: rgba(11, 19, 40, 0.95);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+}
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-shield {
+  width: 28px;
+  height: 28px;
+  color: #38bdf8;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+}
+.brand-name {
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #f8fafc;
+}
+.brand-accent {
+  color: #38bdf8;
+}
+.brand-edition {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: #94a3b8;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.topbar-center {
+  display: flex;
+  align-items: center;
+}
+.llm-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+}
+.llm-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 10px #38bdf8;
+  animation: pulseDot 2s infinite ease-in-out;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+.llm-label {
+  color: #94a3b8;
+}
+.llm-name {
+  color: #f8fafc;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.admin-topbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(147, 51, 234, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #c084fc;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 7px 13px;
+  border-radius: 9px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.admin-topbar-btn:hover, .admin-topbar-btn.active {
+  background: rgba(147, 51, 234, 0.28);
+  border-color: #c084fc;
+  color: #f3e8ff;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.3);
+}
+.admin-icon {
+  font-size: 0.95rem;
+}
+.ai-trigger-topbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+  border: none;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.35);
+}
+.ai-trigger-topbar:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(14, 165, 233, 0.5);
+}
+.user-profile-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 4px 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: white;
+  font-weight: 800;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
+.user-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.user-tier {
+  font-size: 0.68rem;
+  color: #38bdf8;
+}
+
+/* App Body Layout */
+.app-body-container {
+  display: flex;
+  flex: 1;
+}
+
+/* Sidebar */
+.banking-sidebar {
+  width: 250px;
+  background: rgba(11, 19, 38, 0.6);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px 16px;
+  flex-shrink: 0;
+}
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f8fafc;
+}
+.nav-item.active {
+  background: rgba(14, 165, 233, 0.12);
+  color: #38bdf8;
+  border-left: 3px solid #38bdf8;
+}
+.sidebar-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 10px 0;
+}
+.admin-nav-item {
+  color: #c084fc;
+}
+.admin-nav-item:hover {
+  background: rgba(147, 51, 234, 0.12);
+  color: #e9d5ff;
+}
+.admin-nav-item.active {
+  background: rgba(147, 51, 234, 0.18);
+  color: #d8b4fe;
+  border-left: 3px solid #c084fc;
+}
+.admin-chip {
+  margin-left: auto;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(147, 51, 234, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #d8b4fe;
+}
+.nav-icon {
+  font-size: 1.15rem;
+}
+.sidebar-footer {
+  margin-top: 20px;
+}
+.support-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.support-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.support-phone {
+  font-size: 0.8rem;
+  color: #38bdf8;
+  font-weight: 600;
+}
+.support-fdic {
+  font-size: 0.62rem;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+/* Main Content Area */
+.banking-content-area {
+  flex: 1;
+  padding: 28px 36px;
+  overflow-y: auto;
+  max-width: 1400px;
+}
+.page-content-wrapper {
+  animation: fadeIn 0.25s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Global Toast */
+.global-toast {
+  position: sticky;
+  top: 10px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.9), rgba(5, 150, 105, 0.95));
+  backdrop-filter: blur(8px);
+  color: white;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.5);
+  margin-bottom: 20px;
+  animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.toast-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+}

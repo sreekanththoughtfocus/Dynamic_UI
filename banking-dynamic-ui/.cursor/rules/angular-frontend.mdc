@@ -1,0 +1,25 @@
+---
+description: Angular 22 frontend standards and Generative UI component guidelines
+globs: banking-portal/**/*
+alwaysApply: false
+---
+
+# Angular 22 & Frontend Standards
+
+## Principles
+1. **ChangeDetectionStrategy.OnPush**: Every Angular component must explicitly declare `changeDetection: ChangeDetectionStrategy.OnPush`.
+2. **Signals**:
+   - Component state: `readonly state = signal<State>(initial)`.
+   - Derived values: `readonly total = computed(() => ...)`.
+   - Side effects: `effect(() => ...)` only when synchronizing external systems.
+3. **Native Control Flow**:
+   - Use `@if (condition()) { ... } @else { ... }`.
+   - Use `@for (item of items(); track item.id) { ... }`.
+   - Use `@switch (tab()) { @case ('a') { ... } }`.
+   - Do NOT import `CommonModule` or use legacy `*ngIf`, `*ngFor`.
+4. **Standalone Components**:
+   - Components are standalone by default in Angular 22.
+   - Do NOT specify redundant `standalone: true`.
+5. **Generative UI Component Integration**:
+   - Generative widgets must implement or adhere to standard prop bindings.
+   - Decouple widget presentations from network calls where possible; trigger callbacks or signals.

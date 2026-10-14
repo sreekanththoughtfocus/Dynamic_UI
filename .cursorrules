@@ -1,0 +1,47 @@
+# Cursor Rules: Apex Banking Generative UI Platform
+
+## 1. Project Overview & Architecture
+This repository contains a full-stack Generative UI enterprise application:
+- **Frontend (`banking-portal/`):** Angular 22, TypeScript 5.8+, standalone component architecture with a shared `generative-ui` library (`projects/generative-ui`).
+- **Backend (`banking-api/`):** .NET 10 Core Minimal Web API, Entity Framework Core 10 (SQLite), Ollama / Semantic Kernel streaming engine.
+
+---
+
+## 2. Angular 22 & Frontend Rules
+- **Change Detection:** Always specify `changeDetection: ChangeDetectionStrategy.OnPush` on every component.
+- **Signals First:** Use Angular Signals (`signal()`, `computed()`, `effect()`) for reactive state. Avoid legacy RxJS `BehaviorSubject` where signals suffice.
+- **Modern Control Flow:** Always use Angular native control flow syntax (`@if`, `@for`, `@switch`). Never use `*ngIf` or `*ngFor`.
+- **Component Model:** Components in Angular 22 are standalone by default. Do not add obsolete `standalone: true`.
+- **Dynamic UI Library (`projects/generative-ui`):**
+  - Keep generative UI rendering decoupled from business banking domain logic.
+  - Generative widgets are registered into the `WidgetRegistryService` dynamically.
+  - Dynamic widgets communicate outward via standard typed events and signals.
+- **Accessibility & UX:**
+  - WCAG 2.1 AA compliant color contrast and focus rings (`focus-visible: outline-cyan-400`).
+  - Mobile-responsive layouts with dark-mode first enterprise styling.
+
+---
+
+## 3. .NET 10 & Entity Framework Core Rules
+- **Async First:** All database queries and commands must use async EF Core APIs:
+  - `await _db.Accounts.AsNoTracking().ToListAsync()`
+  - `await _db.SaveChangesAsync()`
+  - NEVER use synchronous blocking `.Result`, `.Wait()`, or `.ToList()` on EF Core DbSets.
+- **Query Optimization:**
+  - Use `AsNoTracking()` for read-only queries to maximize throughput.
+  - Define explicit decimal precision (`HasPrecision(18, 2)`) for all financial amounts.
+- **Auditing & Safety:**
+  - Any mutating banking operation (transfer, PIN reset, card freeze) must record an `AiAuditLog` entry in the SQLite database.
+- **Clean Dependency Injection:**
+  - Register `BankingDbContext` and `IBankingService` as `Scoped` services.
+
+---
+
+## 4. LLM & Generative UI Streaming Protocol
+- **SSE Stream Format:** The `/api/chat` endpoint emits standard SSE chunks formatted as JSON:
+  - `{"type":"provider_info", "providerInfo": { ... }}`
+  - `{"type":"delta", "content": "..."}`
+  - `{"type":"tool_call", "toolCall": { "name": "...", "args": { ... } }}`
+  - `{"type":"widget", "widget": { "name": "...", "props": { ... } }}`
+  - `{"type":"done"}`
+- **Provider Agnostic:** Support local Ollama (`http://localhost:11434/v1`), LM Studio, Apple Silicon OMLX, and Cloud providers (Gemini, Claude, OpenAI) configured seamlessly via `appsettings.json`.

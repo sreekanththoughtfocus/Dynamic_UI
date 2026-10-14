@@ -1,0 +1,21 @@
+---
+description: Generative UI design system, widget lifecycle, and streaming protocol
+globs: **/*
+alwaysApply: true
+---
+
+# Generative UI Architecture & Patterns
+
+## Core Architecture
+1. **Dynamic Streaming:**
+   - The backend streams natural language thoughts and triggers client-side widgets asynchronously.
+   - The user interface renders widgets inline alongside the chat stream without flickering.
+
+2. **Decoupled Widget Contract:**
+   - Widgets are identified by unique string names (e.g., `statementWidget`, `cardPinResetWidget`, `cardControlsWidget`, `transferConfirmWidget`).
+   - Each widget accepts a JSON-serializable `props` dictionary and emits typed user actions.
+
+3. **Enterprise UI Guidelines:**
+   - Rich styling with dark theme, glassmorphism (`backdrop-filter: blur(...)`), radiant gradients, and micro-animations.
+   - High accessibility contrast (WCAG 2.1 AA compliant).
+   - Instant visual feedback on interactions (optimistic updates, pending spinners, success badges).

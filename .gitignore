@@ -1,0 +1,27 @@
+# Secrets
+**/appsettings.Local.json
+**/secrets.json
+**/*.user
+.env
+.env.*
+
+# .NET
+**/bin/
+**/obj/
+*.db
+*.db-shm
+*.db-wal
+
+# Node / Angular
+**/node_modules/
+**/dist/
+**/.angular/
+**/out-tsc/
+**/coverage/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+*.suo
+.vs/

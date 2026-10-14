@@ -1,0 +1,28 @@
+---
+description: .NET 10 Web API and Entity Framework Core coding standards
+globs: banking-api/**/*
+alwaysApply: false
+---
+
+# .NET 10 & Entity Framework Core Standards
+
+## 1. C# 13 Clean Architecture
+- Minimal APIs or clean controllers with Dependency Injection.
+- Clean separation between HTTP transport, Domain Services, and Data Access (`BankingDbContext`).
+
+## 2. Entity Framework Core Async
+- Always use async LINQ methods:
+  - `await _db.Accounts.AsNoTracking().ToListAsync()`
+  - `await _db.Cards.FirstOrDefaultAsync(c => c.Id == cardId)`
+  - `await _db.SaveChangesAsync()`
+- Never execute `.Result`, `.Wait()`, or blocking `.ToList()` on EF Core DbSets.
+- Use `AsNoTracking()` on read queries to prevent unnecessary change tracker overhead.
+
+## 3. Financial Data Precision & Auditing
+- All financial balances and transactions must use `decimal` with explicit precision `HasPrecision(18, 2)`.
+- Mutations (transfers, card locks, PIN resets) must record an entry into `_db.AuditLogs`.
+
+## 4. LLM & Ollama Integration
+- Stream completions using `IAsyncEnumerable<StreamEvent>`.
+- Use SSE (`text/event-stream`) with `context.Response.Body.FlushAsync()`.
+- Validate endpoints and gracefully fall back if local LLM is starting up.
