@@ -17,8 +17,8 @@ import { GenUiService } from 'generative-ui';
       <!-- Top Welcome Banner -->
       <section class="welcome-section">
         <div>
-          <span class="greeting-tag">Apex Private Client</span>
-          <h1 class="user-greeting">Welcome back, Alex Vance</h1>
+          <span class="greeting-tag">{{ clientRole() }}</span>
+          <h1 class="user-greeting">Welcome back, {{ greetingName() }}</h1>
           <p class="greeting-sub">Your accounts are protected by multi-factor biometric authentication.</p>
         </div>
         <div class="net-worth-box">
@@ -46,8 +46,8 @@ import { GenUiService } from 'generative-ui';
             <button class="ai-chip" (click)="askAi('I want to reset the PIN for my Debit Card')">
               💳 "Reset PIN for my Debit Card"
             </button>
-            <button class="ai-chip" (click)="askAi('Temporarily freeze my Platinum Credit Card')">
-              🔒 "Freeze my Credit Card"
+            <button class="ai-chip" (click)="askAi('Freeze my debit card')">
+              🔒 "Freeze my debit card"
             </button>
             <button class="ai-chip" (click)="askAi('Help me reset my online banking password')">
               🔑 "Reset my login password"
@@ -415,6 +415,13 @@ import { GenUiService } from 'generative-ui';
 export class DashboardComponent {
   protected readonly banking = inject(BankingStateService);
   protected readonly genUi = inject(GenUiService);
+
+  protected readonly greetingName = computed(
+    () => this.banking.currentUser()?.fullName?.trim() || 'Client',
+  );
+  protected readonly clientRole = computed(
+    () => this.banking.currentUser()?.role || 'Apex Private Client',
+  );
 
   protected readonly totalNetWorth = computed(() => {
     return this.banking

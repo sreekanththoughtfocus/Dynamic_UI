@@ -319,3 +319,39 @@
   cursor: pointer;
   padding: 2px 6px;
 }
+
+.topbar-right {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sign-out-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.sign-out-btn:hover:not(:disabled) {
+  border-color: #f87171;
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.sign-out-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.nav-item:focus-visible,
+.sign-out-btn:focus-visible,
+.ai-trigger-topbar:focus-visible,
+.admin-topbar-btn:focus-visible,
+.toast-close:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}

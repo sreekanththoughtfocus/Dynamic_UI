@@ -1,5 +1,5 @@
-import { inject, Injectable, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { effect, inject, Injectable, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import {
   BankAccount,
   BankCard,
@@ -8,28 +8,23 @@ import {
   UserAccount,
   DatabaseOverview,
 } from '../models/banking.models';
+import { AuthService } from '../auth/auth.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class BankingStateService {
-  private readonly http = inject(HttpClient);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
   private readonly apiBase = 'http://localhost:5050/api';
 
-  public readonly currentUser = signal<UserAccount | null>({
-    id: 'usr-alex-01',
-    username: 'alex.vance',
-    fullName: 'Alex Vance',
-    email: 'a.vance@example.com',
-    password: 'ApexSecure2026!',
-    phoneNumber: '+1 (555) 382-9104',
-    address: '742 Evergreen Terrace, San Francisco, CA 94107',
-    twoFactorEnabled: true,
-    biometricsEnabled: true,
-    role: 'Premier Private Client',
-    lastLoginAt: new Date().toISOString(),
-    lastPasswordResetAt: new Date(Date.now() - 14 * 86400000).toISOString(),
-  });
+  public readonly currentUser = signal<UserAccount | null>(this.auth.user());
+
+  constructor() {
+    effect(() => {
+      this.currentUser.set(this.auth.user());
+    });
+  }
 
   // Signals
   public readonly accounts = signal<BankAccount[]>([
@@ -173,10 +168,6 @@ export class BankingStateService {
 
   public readonly notification = signal<string | null>(null);
 
-  constructor() {
-    this.refreshFromBackend();
-  }
-
   public showToast(message: string): void {
     this.notification.set(message);
     setTimeout(() => {
@@ -186,24 +177,45 @@ export class BankingStateService {
     }, 4500);
   }
 
+  private async api(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    const tokenAtSend = this.auth.token();
+    if (tokenAtSend) {
+      headers.set('Authorization', `Bearer ${tokenAtSend}`);
+    }
+
+    const response = await fetch(`${this.apiBase}${path}`, { ...init, headers });
+    if (response.status === 401 && tokenAtSend && this.auth.token() === tokenAtSend) {
+      this.auth.expireSession();
+      if (!this.router.url.startsWith('/login')) {
+        void this.router.navigateByUrl('/login');
+      }
+    }
+    return response;
+  }
+
   public async refreshFromBackend(): Promise<void> {
+    const tokenAtStart = this.auth.token();
     try {
       const [user, accounts, cards] = await Promise.all([
-        fetch(`${this.apiBase}/user-profile`).then((r) => (r.ok ? r.json() : null)),
-        fetch(`${this.apiBase}/accounts`).then((r) => (r.ok ? r.json() : null)),
-        fetch(`${this.apiBase}/cards`).then((r) => (r.ok ? r.json() : null)),
+        this.api('/user-profile').then((r) => (r.ok ? r.json() : null)),
+        this.api('/accounts').then((r) => (r.ok ? r.json() : null)),
+        this.api('/cards').then((r) => (r.ok ? r.json() : null)),
       ]);
 
+      if (this.auth.token() !== tokenAtStart) return;
+
       if (user) {
-        this.currentUser.set(user);
+        const safeUser: UserAccount = { ...user, password: undefined };
+        this.currentUser.set(safeUser);
         this.securityProfile.update((p) => ({
           ...p,
-          username: user.username,
-          email: user.email,
-          twoFactorEnabled: user.twoFactorEnabled,
-          biometricsEnabled: user.biometricsEnabled,
-          lastPasswordChange: user.lastPasswordResetAt
-            ? new Date(user.lastPasswordResetAt).toLocaleDateString()
+          username: safeUser.username,
+          email: safeUser.email,
+          twoFactorEnabled: safeUser.twoFactorEnabled,
+          biometricsEnabled: safeUser.biometricsEnabled,
+          lastPasswordChange: safeUser.lastPasswordResetAt
+            ? new Date(safeUser.lastPasswordResetAt).toLocaleDateString()
             : p.lastPasswordChange,
         }));
       }
@@ -216,7 +228,7 @@ export class BankingStateService {
 
   public async getDatabaseOverview(): Promise<DatabaseOverview | null> {
     try {
-      const res = await fetch(`${this.apiBase}/admin/overview`);
+      const res = await this.api(`/admin/overview`);
       if (res.ok) {
         return (await res.json()) as DatabaseOverview;
       }
@@ -228,7 +240,7 @@ export class BankingStateService {
 
   public async updateAdminUser(user: UserAccount): Promise<boolean> {
     try {
-      const res = await fetch(`${this.apiBase}/admin/users/${user.id}`, {
+      const res = await this.api(`/admin/users/${user.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(user),
@@ -246,7 +258,7 @@ export class BankingStateService {
 
   public async resetDatabase(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.apiBase}/admin/reset-db`, {
+      const res = await this.api(`/admin/reset-db`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -262,7 +274,7 @@ export class BankingStateService {
 
   public async createAdminTransaction(tx: Partial<BankTransaction>): Promise<boolean> {
     try {
-      const res = await fetch(`${this.apiBase}/admin/transactions`, {
+      const res = await this.api(`/admin/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(tx),
@@ -280,7 +292,7 @@ export class BankingStateService {
 
   public async resetCardPin(cardId: string, newPin: string): Promise<boolean> {
     try {
-      await fetch(`${this.apiBase}/cards/${cardId}/pin`, {
+      await this.api(`/cards/${cardId}/pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId, newPin }),
@@ -298,7 +310,7 @@ export class BankingStateService {
 
   public async setCardFreeze(cardId: string, freeze: boolean): Promise<boolean> {
     try {
-      await fetch(`${this.apiBase}/cards/${cardId}/freeze`, {
+      await this.api(`/cards/${cardId}/freeze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId, freeze }),
@@ -328,7 +340,7 @@ export class BankingStateService {
 
   public async resetPassword(newPassword: string): Promise<boolean> {
     try {
-      await fetch(`${this.apiBase}/security/password-reset`, {
+      await this.api(`/security/password-reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newPassword }),
@@ -357,7 +369,7 @@ export class BankingStateService {
     }
 
     try {
-      await fetch(`${this.apiBase}/transfers`, {
+      await this.api(`/transfers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

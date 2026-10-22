@@ -14,12 +14,15 @@ public interface IBankingService
     Task<bool> ResetCardPinAsync(string cardId, string newPin, string initiator = "User");
     Task<bool> SetCardFreezeAsync(string cardId, bool freeze, string initiator = "User");
     Task<bool> UpdateCardLimitAsync(string cardId, decimal limit, string initiator = "User");
-    Task<bool> ResetPasswordAsync(string newPassword, string initiator = "User");
+    Task<bool> ResetPasswordAsync(string newPassword, string initiator = "User", string? userId = null);
     Task<bool> TransferFundsAsync(string fromAccountId, string recipient, decimal amount, string note, string initiator = "User");
     Task<List<AiAuditLog>> GetAuditLogsAsync();
 
     // User management & Admin validation
     Task<UserAccount?> GetUserProfileAsync(string userId = "usr-alex-01");
+    Task<UserAccount?> GetUserByIdAsync(string userId);
+    Task<UserAccount?> AuthenticateAsync(string username, string password);
+    Task RecordAuditAsync(string action, string initiator, string details);
     Task<List<UserAccount>> GetAllUsersAsync();
     Task<bool> UpdateUserAsync(UserAccount user, string initiator = "Admin");
     Task<DatabaseOverviewDto> GetDatabaseOverviewAsync();
@@ -126,20 +129,29 @@ public class BankingService : IBankingService
         return true;
     }
 
-    public async Task<bool> ResetPasswordAsync(string newPassword, string initiator = "User")
+    public async Task<bool> ResetPasswordAsync(string newPassword, string initiator = "User", string? userId = null)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == "usr-alex-01") ?? await _db.Users.FirstOrDefaultAsync();
-        if (user != null)
+        UserAccount? user;
+        if (!string.IsNullOrEmpty(userId))
         {
-            user.Password = newPassword;
-            user.LastPasswordResetAt = DateTime.UtcNow;
+            user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
         }
+        else
+        {
+            user = await _db.Users.FirstOrDefaultAsync(u => u.Id == "usr-alex-01")
+                ?? await _db.Users.FirstOrDefaultAsync();
+        }
+
+        if (user == null) return false;
+
+        user.Password = newPassword;
+        user.LastPasswordResetAt = DateTime.UtcNow;
 
         _db.AuditLogs.Add(new AiAuditLog
         {
             Action = "ResetPassword",
             Initiator = initiator,
-            Details = $"Online banking password updated for user {(user != null ? user.Username : "alex.vance")}"
+            Details = $"Online banking password updated for user {user.Username}"
         });
 
         await _db.SaveChangesAsync();
@@ -192,6 +204,42 @@ public class BankingService : IBankingService
     {
         return await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId)
             ?? await _db.Users.AsNoTracking().FirstOrDefaultAsync();
+    }
+
+    public async Task<UserAccount?> GetUserByIdAsync(string userId)
+    {
+        return await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+    }
+
+    public async Task<UserAccount?> AuthenticateAsync(string username, string password)
+    {
+        var lowered = username.Trim().ToLowerInvariant();
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username.ToLower() == lowered);
+        if (user == null || !string.Equals(user.Password, password, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        user.LastLoginAt = DateTime.UtcNow;
+        _db.AuditLogs.Add(new AiAuditLog
+        {
+            Action = "UserLogin",
+            Initiator = user.Username,
+            Details = $"Online banking session started for {user.FullName}"
+        });
+        await _db.SaveChangesAsync();
+        return user;
+    }
+
+    public async Task RecordAuditAsync(string action, string initiator, string details)
+    {
+        _db.AuditLogs.Add(new AiAuditLog
+        {
+            Action = action,
+            Initiator = initiator,
+            Details = details
+        });
+        await _db.SaveChangesAsync();
     }
 
     public async Task<List<UserAccount>> GetAllUsersAsync()

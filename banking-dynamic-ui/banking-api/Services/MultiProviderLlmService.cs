@@ -304,8 +304,7 @@ public class MultiProviderLlmService : ILlmService
                          (text.Contains("card") && (text.Contains("reset") || text.Contains("change")) && !text.Contains("password"));
 
         // 2. Specific Action: Card Controls / Freeze / Limits
-        var isCardControls = text.Contains("freeze") || text.Contains("unfreeze") || 
-                             text.Contains("lock") || (text.Contains("card") && (text.Contains("limit") || text.Contains("controls") || text.Contains("block")));
+        var isCardControls = IsCardControlRequest(text);
 
         // 3. Specific Action: Password & Authentication Credentials
         var isPasswordReset = text.Contains("password") || 
@@ -314,9 +313,7 @@ public class MultiProviderLlmService : ILlmService
                               text.Contains("2fa");
 
         // 4. Specific Action: Fund Transfer
-        var isTransfer = text.Contains("transfer") || text.Contains("send money") || 
-                         text.Contains("wire") || text.Contains("pay ") || text.Contains("send funds") ||
-                         Regex.IsMatch(text, @"\bsend\s+(\$?\d+|funds|money)\b");
+        var isTransfer = IsTransferRequest(text);
 
         // 5. Specific Action: Loan & Mortgage Financing Estimator
         var isLoan = text.Contains("loan") || text.Contains("mortgage") || text.Contains("emi") || 
@@ -344,9 +341,8 @@ public class MultiProviderLlmService : ILlmService
 
         if (isPinReset)
         {
-            var isCredit = text.Contains("credit");
             var cards = await _bankingService.GetCardsAsync();
-            var targetCard = cards.FirstOrDefault(c => isCredit ? c.CardType == "Credit" : c.CardType == "Debit") ?? cards.First();
+            var targetCard = ResolveCard(cards, text, defaultToDebit: true) ?? cards.First();
 
             yield return new StreamEvent
             {
@@ -383,42 +379,49 @@ public class MultiProviderLlmService : ILlmService
         }
         else if (isCardControls)
         {
-            var card = (await _bankingService.GetCardsAsync()).First();
-            var shouldFreeze = !text.Contains("unfreeze") && !text.Contains("unlock");
-
-            yield return new StreamEvent
+            var cards = await _bankingService.GetCardsAsync();
+            var card = ResolveCard(cards, text, defaultToDebit: false);
+            if (card != null)
             {
-                Type = "tool_call",
-                ToolCall = new ToolCallDto
+                var changingLock = TryGetFreezeAction(text, out var shouldFreeze);
+                if (changingLock)
                 {
-                    Name = "toggleCardFreeze",
-                    Args = new Dictionary<string, object>
+                    yield return new StreamEvent
                     {
-                        ["cardId"] = card.Id,
-                        ["freeze"] = shouldFreeze
-                    }
+                        Type = "tool_call",
+                        ToolCall = new ToolCallDto
+                        {
+                            Name = "toggleCardFreeze",
+                            Args = new Dictionary<string, object>
+                            {
+                                ["cardId"] = card.Id,
+                                ["freeze"] = shouldFreeze
+                            }
+                        }
+                    };
+                    await Task.Delay(150, cancellationToken);
                 }
-            };
-            await Task.Delay(150, cancellationToken);
 
-            yield return new StreamEvent
-            {
-                Type = "widget",
-                Widget = new WidgetDto
+                yield return new StreamEvent
                 {
-                    Name = "cardControlsWidget",
-                    Title = "Card Controls & Security",
-                    Props = new Dictionary<string, object>
+                    Type = "widget",
+                    Widget = new WidgetDto
                     {
-                        ["cardId"] = card.Id,
-                        ["cardName"] = card.CardName,
-                        ["cardNumberMasked"] = card.CardNumberMasked,
-                        ["isFrozen"] = shouldFreeze,
-                        ["spendingLimit"] = card.SpendingLimit,
-                        ["currentBalance"] = card.CurrentBalance
+                        Name = "cardControlsWidget",
+                        Title = $"{card.CardType} Card Controls",
+                        Props = new Dictionary<string, object>
+                        {
+                            ["cardId"] = card.Id,
+                            ["cardName"] = card.CardName,
+                            ["cardNumberMasked"] = card.CardNumberMasked,
+                            ["cardType"] = card.CardType,
+                            ["isFrozen"] = changingLock ? shouldFreeze : card.IsFrozen,
+                            ["spendingLimit"] = card.SpendingLimit,
+                            ["currentBalance"] = card.CurrentBalance
+                        }
                     }
-                }
-            };
+                };
+            }
         }
         else if (isPasswordReset)
         {
@@ -453,7 +456,8 @@ public class MultiProviderLlmService : ILlmService
         }
         else if (isTransfer)
         {
-            var account = await _bankingService.GetAccountAsync("acc-chk-01") ?? (await _bankingService.GetAccountsAsync()).First();
+            var accounts = await _bankingService.GetAccountsAsync();
+            var transfer = ResolveTransfer(accounts, text);
 
             yield return new StreamEvent
             {
@@ -464,11 +468,12 @@ public class MultiProviderLlmService : ILlmService
                     Title = "Authorize Instant Transfer",
                     Props = new Dictionary<string, object>
                     {
-                        ["fromAccount"] = $"{account.AccountType} ({account.AccountNumber})",
-                        ["availableBalance"] = account.AvailableBalance,
-                        ["recipient"] = "Alice Vance (Emergency Reserve)",
-                        ["amount"] = 250.00m,
-                        ["note"] = "Instant Reserve Allocation"
+                        ["fromAccountId"] = transfer.Source.Id,
+                        ["fromAccount"] = $"{transfer.Source.AccountType} ({transfer.Source.AccountNumber})",
+                        ["availableBalance"] = transfer.Source.AvailableBalance,
+                        ["recipient"] = transfer.Recipient,
+                        ["amount"] = transfer.Amount,
+                        ["note"] = transfer.Note
                     }
                 }
             };
@@ -523,6 +528,7 @@ public class MultiProviderLlmService : ILlmService
         }
         else if (isCurrency)
         {
+            var exchange = ResolveExchange(text);
             yield return new StreamEvent
             {
                 Type = "tool_call",
@@ -531,9 +537,9 @@ public class MultiProviderLlmService : ILlmService
                     Name = "getLiveExchangeRate",
                     Args = new Dictionary<string, object>
                     {
-                        ["from"] = "USD",
-                        ["to"] = "EUR",
-                        ["amount"] = 1000m
+                        ["from"] = exchange.From,
+                        ["to"] = exchange.To,
+                        ["amount"] = exchange.Amount
                     }
                 }
             };
@@ -549,9 +555,9 @@ public class MultiProviderLlmService : ILlmService
                     Props = new Dictionary<string, object>
                     {
                         ["title"] = "Live Interbank Currency Exchange",
-                        ["initialAmount"] = 1000m,
-                        ["initialFrom"] = "USD",
-                        ["initialTo"] = "EUR"
+                        ["initialAmount"] = exchange.Amount,
+                        ["initialFrom"] = exchange.From,
+                        ["initialTo"] = exchange.To
                     }
                 }
             };
@@ -687,6 +693,9 @@ public class MultiProviderLlmService : ILlmService
         }
         else if (isStatement)
         {
+            var accounts = await _bankingService.GetAccountsAsync();
+            var account = ResolveStatementAccount(accounts, text);
+
             yield return new StreamEvent
             {
                 Type = "tool_call",
@@ -695,15 +704,14 @@ public class MultiProviderLlmService : ILlmService
                     Name = "fetchStatements",
                     Args = new Dictionary<string, object>
                     {
-                        ["accountId"] = "acc-chk-01",
+                        ["accountId"] = account.Id,
                         ["limit"] = 6
                     }
                 }
             };
             await Task.Delay(150, cancellationToken);
 
-            var transactions = await _bankingService.GetStatementsAsync("acc-chk-01", 6);
-            var account = await _bankingService.GetAccountAsync("acc-chk-01") ?? (await _bankingService.GetAccountsAsync()).First();
+            var transactions = await _bankingService.GetStatementsAsync(account.Id, 6);
 
             yield return new StreamEvent
             {
@@ -763,15 +771,12 @@ public class MultiProviderLlmService : ILlmService
 
         var isPinReset = Regex.IsMatch(text, @"\bpin\b") || 
                          (text.Contains("card") && (text.Contains("reset") || text.Contains("change")) && !text.Contains("password"));
-        var isCardControls = text.Contains("freeze") || text.Contains("unfreeze") || 
-                             text.Contains("lock") || (text.Contains("card") && (text.Contains("limit") || text.Contains("controls") || text.Contains("block")));
+        var isCardControls = IsCardControlRequest(text);
         var isPasswordReset = text.Contains("password") || 
                               (text.Contains("security") && text.Contains("reset")) ||
                               (text.Contains("account") && text.Contains("credentials")) ||
                               text.Contains("2fa");
-        var isTransfer = text.Contains("transfer") || text.Contains("send money") || 
-                         text.Contains("wire") || text.Contains("pay ") || text.Contains("send funds") ||
-                         Regex.IsMatch(text, @"\bsend\s+(\$?\d+|funds|money)\b");
+        var isTransfer = IsTransferRequest(text);
         var isLoan = text.Contains("loan") || text.Contains("mortgage") || text.Contains("emi") || 
                      text.Contains("borrow") || text.Contains("financing") || text.Contains("calculator");
         var isCurrency = text.Contains("convert") || text.Contains("currency") || text.Contains("forex") || 
@@ -789,8 +794,11 @@ public class MultiProviderLlmService : ILlmService
 
         if (isPinReset)
         {
-            var isCredit = text.Contains("credit");
-            var cardName = isCredit ? "Apex Black Diamond Elite (Credit Card)" : "Apex Premier Debit Platinum (Debit Card)";
+            var cards = await _bankingService.GetCardsAsync();
+            var targetCard = ResolveCard(cards, text, defaultToDebit: true);
+            var cardName = targetCard == null
+                ? "card"
+                : $"{targetCard.CardName} ({targetCard.CardType} card)";
             var intro = $"For security verification, I have initiated a secure PIN reset session for your **{cardName}**. Please enter your new 4-digit PIN and verify with the 2FA code below:";
             foreach (var chunk in SplitIntoWordChunks(intro))
             {
@@ -800,7 +808,14 @@ public class MultiProviderLlmService : ILlmService
         }
         else if (isCardControls)
         {
-            var intro = "Here are the live card protection switches and spending thresholds from your account:";
+            var cards = await _bankingService.GetCardsAsync();
+            var card = ResolveCard(cards, text, defaultToDebit: false);
+            var changingLock = TryGetFreezeAction(text, out var shouldFreeze);
+            var intro = card == null
+                ? "You have two cards: the **Apex Premier Debit Platinum** and the **Apex Black Diamond Elite** credit card. Tell me which one, for example 'Freeze my debit card' or 'Freeze my credit card'."
+                : changingLock
+                    ? $"I have {(shouldFreeze ? "frozen" : "unlocked")} your **{card.CardName}** ({card.CardType} card). The controls below match that card:"
+                    : $"Here are the live controls for your **{card.CardName}** ({card.CardType} card):";
             foreach (var chunk in SplitIntoWordChunks(intro))
             {
                 yield return new StreamEvent { Type = "delta", Content = chunk };
@@ -818,7 +833,8 @@ public class MultiProviderLlmService : ILlmService
         }
         else if (isTransfer)
         {
-            var intro = "I have prepared an instant fund transfer for your confirmation. Please review the details and authorize the dispatch:";
+            var transfer = ResolveTransfer(await _bankingService.GetAccountsAsync(), text);
+            var intro = $"I have prepared a ${transfer.Amount:F2} transfer from your **{transfer.Source.AccountType}** account to **{transfer.Recipient}**. Please review the details and authorize the dispatch:";
             foreach (var chunk in SplitIntoWordChunks(intro))
             {
                 yield return new StreamEvent { Type = "delta", Content = chunk };
@@ -836,7 +852,8 @@ public class MultiProviderLlmService : ILlmService
         }
         else if (isCurrency)
         {
-            var intro = "Here is your live **Wholesale Currency Exchange** converter with real-time interbank rates and zero transaction fees:";
+            var exchange = ResolveExchange(text);
+            var intro = $"Here is your live **Wholesale Currency Exchange** converter for **{exchange.Amount:0.##} {exchange.From}** to **{exchange.To}**:";
             foreach (var chunk in SplitIntoWordChunks(intro))
             {
                 yield return new StreamEvent { Type = "delta", Content = chunk };
@@ -868,7 +885,8 @@ public class MultiProviderLlmService : ILlmService
         }
         else if (isStatement)
         {
-            var intro = "I have queried the core EF Core ledger for your **Premier Checking** account:";
+            var statementAccount = ResolveStatementAccount(await _bankingService.GetAccountsAsync(), text);
+            var intro = $"I have queried the core ledger for your **{statementAccount.AccountType}** account:";
             foreach (var chunk in SplitIntoWordChunks(intro))
             {
                 yield return new StreamEvent { Type = "delta", Content = chunk };
@@ -1113,9 +1131,13 @@ public class MultiProviderLlmService : ILlmService
 
             5. CUSTOMER CONTEXT:
                - Customer: Alex Vance (Private Client)
-               - Primary Account: Premier Checking (CHK-98214-01), Balance: $24,890.75
-               - Secondary Account: High-Yield Savings (SAV-49102-02), Balance: $78,250.00
-               - Active Cards: Apex Premier Debit Platinum (Debit), Apex Black Diamond Elite (Credit)
+               - Primary Account: Premier Checking (CHK-98214-01)
+               - Savings Account: High-Yield Savings (SAV-33108-02)
+               - Investment Account: Global Wealth Portfolio (INV-55091-03)
+               - Debit card: Apex Premier Debit Platinum. This is the only platinum card.
+               - Credit card: Apex Black Diamond Elite. Do not call this card platinum.
+               When the customer names a debit card, platinum card, or card ending 3419, act on the debit card.
+               When the customer names a credit card, diamond card, elite card, or card ending 8821, act on the credit card.
 
             Provide a concise, direct, professional response (1-3 sentences). Always maintain strict banking compliance.
             """;
@@ -1174,5 +1196,237 @@ public class MultiProviderLlmService : ILlmService
 
         reason = string.Empty;
         return false;
+    }
+
+    private static bool IsCardControlRequest(string text) =>
+        Regex.IsMatch(text, @"\b(freeze|unfreeze|unlock|unblock|lock|block)\b")
+        || (Regex.IsMatch(text, @"\bcard\b") && Regex.IsMatch(text, @"\b(limit|limits|controls|control)\b"));
+
+    private static bool IsTransferRequest(string text)
+    {
+        var transfer = text.Contains("transfer")
+            || text.Contains("send money")
+            || text.Contains("send funds")
+            || text.Contains("wire")
+            || Regex.IsMatch(text, @"\bsend\s+(\$?\d+|funds|money)\b")
+            || Regex.IsMatch(text, @"\bpay\b");
+        if (!transfer) return false;
+
+        var cardPayment = Regex.IsMatch(text, @"\b(debit|credit)\s+card\b")
+            || Regex.IsMatch(text, @"\bcard\s+(bill|payment|balance)\b");
+        return !(cardPayment && !text.Contains("transfer") && !text.Contains("wire"));
+    }
+
+    private static bool TryGetFreezeAction(string text, out bool freeze)
+    {
+        if (Regex.IsMatch(text, @"\b(unfreeze|unlock|unblock)\b"))
+        {
+            freeze = false;
+            return true;
+        }
+
+        if (Regex.IsMatch(text, @"\b(freeze|lock|block)\b"))
+        {
+            freeze = true;
+            return true;
+        }
+
+        freeze = false;
+        return false;
+    }
+
+    private static readonly HashSet<string> GenericCardWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "apex", "card", "bank", "the", "and"
+    };
+
+    private static BankCard? ResolveCard(IReadOnlyList<BankCard> cards, string text, bool defaultToDebit)
+    {
+        if (cards.Count == 0) return null;
+
+        var last4Hits = cards.Where(card =>
+        {
+            var last4 = Regex.Match(card.CardNumberMasked, @"(\d{4})\s*$");
+            return last4.Success && Regex.IsMatch(text, $@"\b{last4.Groups[1].Value}\b");
+        }).ToList();
+        if (last4Hits.Count == 1) return last4Hits[0];
+
+        var wantsDebit = Regex.IsMatch(text, @"\bdebit\b");
+        var wantsCredit = Regex.IsMatch(text, @"\bcredit\b");
+        if (wantsDebit != wantsCredit)
+        {
+            var type = wantsDebit ? "Debit" : "Credit";
+            var typed = cards.FirstOrDefault(c => c.CardType.Equals(type, StringComparison.OrdinalIgnoreCase));
+            if (typed != null) return typed;
+        }
+
+        var ranked = cards
+            .Select(card => (Card: card, Score: ScoreCardName(card, text)))
+            .Where(item => item.Score > 0)
+            .GroupBy(item => item.Score)
+            .OrderByDescending(group => group.Key)
+            .FirstOrDefault();
+        if (ranked != null && ranked.Count() == 1)
+        {
+            return ranked.First().Card;
+        }
+
+        if (wantsDebit && wantsCredit)
+        {
+            var debitAt = text.LastIndexOf("debit", StringComparison.Ordinal);
+            var creditAt = text.LastIndexOf("credit", StringComparison.Ordinal);
+            var type = debitAt > creditAt ? "Debit" : "Credit";
+            return cards.FirstOrDefault(c => c.CardType.Equals(type, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!defaultToDebit) return null;
+
+        return cards.FirstOrDefault(c => c.CardType.Equals("Debit", StringComparison.OrdinalIgnoreCase))
+            ?? cards.FirstOrDefault();
+    }
+
+    private static int ScoreCardName(BankCard card, string text)
+    {
+        var score = 0;
+        foreach (var token in card.CardName.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (token.Length < 4 || GenericCardWords.Contains(token)) continue;
+            if (Regex.IsMatch(text, $@"\b{Regex.Escape(token)}\b", RegexOptions.IgnoreCase))
+            {
+                score += token.Length;
+            }
+        }
+
+        var last4 = Regex.Match(card.CardNumberMasked, @"(\d{4})\s*$");
+        if (last4.Success && Regex.IsMatch(text, $@"\b{last4.Groups[1].Value}\b"))
+        {
+            score += 20;
+        }
+
+        return score;
+    }
+
+    private static BankAccount? AccountByKind(IReadOnlyList<BankAccount> accounts, string kind)
+    {
+        kind = kind.ToLowerInvariant();
+        if (kind is "saving" or "savings")
+        {
+            return accounts.FirstOrDefault(a => a.AccountType.Contains("Saving", StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (kind is "investment" or "portfolio" or "wealth")
+        {
+            return accounts.FirstOrDefault(a =>
+                a.AccountType.Contains("Wealth", StringComparison.OrdinalIgnoreCase)
+                || a.AccountType.Contains("Invest", StringComparison.OrdinalIgnoreCase)
+                || a.AccountType.Contains("Portfolio", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return accounts.FirstOrDefault(a => a.AccountType.Contains("Checking", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static BankAccount ResolveStatementAccount(IReadOnlyList<BankAccount> accounts, string text)
+    {
+        var kind = Regex.Match(text, @"\b(savings|saving|checking|investment|portfolio|wealth)\b");
+        if (kind.Success)
+        {
+            var matched = AccountByKind(accounts, kind.Groups[1].Value);
+            if (matched != null) return matched;
+        }
+
+        return accounts.FirstOrDefault(a => a.Id == "acc-chk-01")
+            ?? accounts.FirstOrDefault()
+            ?? new BankAccount { Id = "acc-chk-01", AccountType = "Premier Checking", AccountNumber = "CHK-98214-01", Currency = "USD" };
+    }
+
+    private static (BankAccount Source, string Recipient, decimal Amount, string Note) ResolveTransfer(
+        IReadOnlyList<BankAccount> accounts,
+        string text)
+    {
+        var checking = AccountByKind(accounts, "checking")
+            ?? accounts.FirstOrDefault()
+            ?? new BankAccount { Id = "acc-chk-01", AccountType = "Premier Checking", AccountNumber = "CHK-98214-01", Currency = "USD" };
+        var source = checking;
+        var fromMatch = Regex.Match(text, @"\bfrom\s+(?:my\s+)?(savings|saving|checking|investment|portfolio|wealth)\b");
+        if (fromMatch.Success)
+        {
+            source = AccountByKind(accounts, fromMatch.Groups[1].Value) ?? source;
+        }
+
+        var toMatch = Regex.Match(text, @"\bto\s+(?:my\s+)?(.+)$");
+        var toText = toMatch.Success ? toMatch.Groups[1].Value.Trim().TrimEnd('.', '!', '?') : "";
+        toText = Regex.Replace(toText, @"\s+\b(?:for|memo|note)\b.*$", "", RegexOptions.IgnoreCase).Trim();
+
+        string recipient;
+        if (string.IsNullOrWhiteSpace(toText))
+        {
+            recipient = "Alice Vance (Emergency Reserve)";
+        }
+        else
+        {
+            var kind = Regex.Match(toText, @"\b(savings|saving|checking|investment|portfolio|wealth)\b");
+            if (kind.Success)
+            {
+                var destination = AccountByKind(accounts, kind.Groups[1].Value);
+                recipient = destination == null
+                    ? toText
+                    : $"{destination.AccountType} ({destination.AccountNumber})";
+                if (destination != null && destination.Id == source.Id && !fromMatch.Success)
+                {
+                    var savings = AccountByKind(accounts, "savings");
+                    if (savings != null && savings.Id != destination.Id)
+                    {
+                        source = savings;
+                    }
+                }
+            }
+            else
+            {
+                recipient = toText;
+            }
+        }
+
+        var noteMatch = Regex.Match(text, @"\b(?:for|memo|note)\s+(.+)$");
+        var note = noteMatch.Success ? noteMatch.Groups[1].Value.Trim().TrimEnd('.', '!', '?') : "Instant transfer";
+        return (source, recipient, ParseDirectedMoney(text, 250m), note);
+    }
+
+    private static (decimal Amount, string From, string To) ResolveExchange(string text)
+    {
+        var ordered = new List<string>();
+        foreach (Match match in Regex.Matches(text, @"\b(usd|eur|gbp|chf|cad|aud|jpy|sgd)\b"))
+        {
+            var code = match.Groups[1].Value.ToUpperInvariant();
+            if (ordered.Count == 0 || ordered[^1] != code)
+            {
+                ordered.Add(code);
+            }
+        }
+
+        var from = ordered.Count > 0 ? ordered[0] : "USD";
+        var to = ordered.Count > 1 ? ordered[1] : from == "USD" ? "EUR" : "USD";
+        return (ParseDirectedMoney(text, 1000m), from, to);
+    }
+
+    private static decimal ParseDirectedMoney(string text, decimal fallback)
+    {
+        var preferred = Regex.Match(
+            text,
+            @"(?:transfer|send|pay|convert|exchange|wire)\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?",
+            RegexOptions.IgnoreCase);
+        if (TryReadMoney(preferred, out var directed)) return directed;
+
+        var dollar = Regex.Match(text, @"\$\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?");
+        if (TryReadMoney(dollar, out var withSymbol)) return withSymbol;
+
+        return fallback;
+    }
+
+    private static bool TryReadMoney(Match match, out decimal amount)
+    {
+        amount = 0;
+        if (!match.Success) return false;
+        var raw = (match.Groups[1].Value + match.Groups[2].Value).Replace(",", "");
+        return decimal.TryParse(raw, out amount) && amount > 0;
     }
 }

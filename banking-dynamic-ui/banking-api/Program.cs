@@ -18,6 +18,7 @@ builder.Services.AddDbContext<BankingDbContext>(options =>
 
 // Services
 builder.Services.AddScoped<IBankingService, BankingService>();
+builder.Services.AddSingleton<AuthSessionStore>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient(nameof(CursorCloudAgentsClient), client =>
 {
@@ -48,6 +49,90 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseCors("AllowAngularApp");
+
+app.Use(async (context, next) =>
+{
+    if (HttpMethods.IsOptions(context.Request.Method))
+    {
+        await next();
+        return;
+    }
+
+    var path = context.Request.Path.Value ?? string.Empty;
+    var requiresAuth = path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
+        && !path.Equals("/api/auth/login", StringComparison.OrdinalIgnoreCase)
+        && !path.Equals("/api/llm/status", StringComparison.OrdinalIgnoreCase);
+
+    if (!requiresAuth)
+    {
+        await next();
+        return;
+    }
+
+    var sessions = context.RequestServices.GetRequiredService<AuthSessionStore>();
+    var token = ReadBearer(context);
+    var session = token == null ? null : sessions.Get(token);
+    if (session == null)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        await context.Response.WriteAsJsonAsync(new { message = "Sign in required." });
+        return;
+    }
+
+    context.Items["UserId"] = session.UserId;
+    context.Items["Username"] = session.Username;
+    await next();
+});
+
+app.MapPost("/api/auth/login", async (LoginRequest request, IBankingService banking, AuthSessionStore sessions) =>
+{
+    var username = request.Username?.Trim() ?? string.Empty;
+    var password = request.Password ?? string.Empty;
+    if (username.Length == 0 || password.Length == 0)
+    {
+        return Results.BadRequest(new { message = "Enter your username and password." });
+    }
+
+    var user = await banking.AuthenticateAsync(username, password);
+    if (user == null)
+    {
+        var safeName = username.Length > 64 ? username[..64] : username;
+        await banking.RecordAuditAsync("UserLoginFailed", "Anonymous", $"Rejected sign-in attempt for '{safeName}'");
+        return Results.Json(
+            new { message = "The username or password is incorrect." },
+            statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var session = sessions.Create(user.Id, user.Username);
+    return Results.Ok(new LoginResponse
+    {
+        Token = session.Token,
+        ExpiresAt = session.ExpiresAt,
+        User = PublicUserProfile.From(user)
+    });
+});
+
+app.MapGet("/api/auth/me", async (HttpContext context, IBankingService banking) =>
+{
+    var userId = context.Items["UserId"] as string;
+    if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+    var profile = await banking.GetUserByIdAsync(userId);
+    return profile == null ? Results.Unauthorized() : Results.Ok(PublicUserProfile.From(profile));
+});
+
+app.MapPost("/api/auth/logout", async (HttpContext context, IBankingService banking, AuthSessionStore sessions) =>
+{
+    var token = ReadBearer(context);
+    var username = context.Items["Username"] as string ?? "User";
+    if (!string.IsNullOrEmpty(token))
+    {
+        sessions.Revoke(token);
+    }
+
+    await banking.RecordAuditAsync("UserLogout", username, "Online banking session ended");
+    return Results.Ok(new { success = true });
+});
 
 // Health check / Status
 app.MapGet("/", () => Results.Ok(new
@@ -130,10 +215,13 @@ app.MapPost("/api/cards/{cardId}/freeze", async (string cardId, FreezeCardReques
     return Results.Ok(new { success, isFrozen = req.Freeze, message = $"Card {(req.Freeze ? "frozen" : "unfrozen")} successfully." });
 });
 
-app.MapPost("/api/security/password-reset", async (ResetPasswordRequest req, IBankingService banking) =>
+app.MapPost("/api/security/password-reset", async (HttpContext context, ResetPasswordRequest req, IBankingService banking) =>
 {
-    var success = await banking.ResetPasswordAsync(req.NewPassword);
-    return Results.Ok(new { success, message = "Security credentials updated." });
+    var userId = context.Items["UserId"] as string;
+    var success = await banking.ResetPasswordAsync(req.NewPassword, "UserPortal", userId);
+    return success
+        ? Results.Ok(new { success, message = "Security credentials updated." })
+        : Results.BadRequest(new { success = false, message = "Password could not be updated." });
 });
 
 app.MapPost("/api/transfers", async (TransferFundsRequest req, IBankingService banking) =>
@@ -147,10 +235,13 @@ app.MapPost("/api/transfers", async (TransferFundsRequest req, IBankingService b
 app.MapGet("/api/audit-logs", async (IBankingService banking) => Results.Ok(await banking.GetAuditLogsAsync()));
 
 // User Management & Profile
-app.MapGet("/api/user-profile", async (IBankingService banking) =>
+app.MapGet("/api/user-profile", async (HttpContext context, IBankingService banking) =>
 {
-    var profile = await banking.GetUserProfileAsync();
-    return profile != null ? Results.Ok(profile) : Results.NotFound();
+    var userId = context.Items["UserId"] as string;
+    if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+    var profile = await banking.GetUserByIdAsync(userId);
+    return profile != null ? Results.Ok(PublicUserProfile.From(profile)) : Results.NotFound();
 });
 
 app.MapPut("/api/user-profile", async (UserAccount user, IBankingService banking) =>
@@ -182,5 +273,15 @@ app.MapPost("/api/admin/transactions", async (BankTransaction tx, IBankingServic
     var created = await banking.AddTransactionAsync(tx, "AdminConsole");
     return Results.Ok(created);
 });
+
+static string? ReadBearer(HttpContext context)
+{
+    var header = context.Request.Headers.Authorization.ToString();
+    const string prefix = "Bearer ";
+    if (!header.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+
+    var token = header[prefix.Length..].Trim();
+    return token.Length == 0 ? null : token;
+}
 
 app.Run();

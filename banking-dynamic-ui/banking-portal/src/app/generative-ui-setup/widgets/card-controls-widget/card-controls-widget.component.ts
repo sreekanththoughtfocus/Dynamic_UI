@@ -25,7 +25,7 @@ import { BankingStateService } from '../../../core/services/banking.service';
         </div>
         <div class="card-number">{{ cardNumberMasked() }}</div>
         <div class="card-bottom">
-          <span class="card-name">{{ cardName() }}</span>
+          <span class="card-name">{{ cardName() }}@if (cardType()) { · {{ cardType() }} }</span>
           <span class="card-balance">Limit: {{ spendingLimit() | currency: 'USD' }}</span>
         </div>
       </div>
@@ -39,9 +39,12 @@ import { BankingStateService } from '../../../core/services/banking.service';
             <span class="control-desc">Instantly disable all online & ATM transactions</span>
           </div>
           <button
+            type="button"
             class="toggle-switch-btn"
             [class.active]="isFrozenState()"
             (click)="onToggleFreeze()"
+            [attr.aria-pressed]="isFrozenState()"
+            [attr.aria-label]="isFrozenState() ? 'Unfreeze card' : 'Freeze card'"
           >
             <span class="toggle-slider"></span>
           </button>
@@ -212,6 +215,10 @@ import { BankingStateService } from '../../../core/services/banking.service';
     .toggle-switch-btn.active .toggle-slider {
       transform: translateX(20px);
     }
+    .toggle-switch-btn:focus-visible {
+      outline: 2px solid #22d3ee;
+      outline-offset: 2px;
+    }
 
     .limit-row {
       flex-direction: column;
@@ -268,9 +275,10 @@ import { BankingStateService } from '../../../core/services/banking.service';
 export class CardControlsWidgetComponent {
   private readonly banking = inject(BankingStateService);
 
-  public readonly cardId = input<string>('card-crd-01');
+  public readonly cardId = input<string>('');
   public readonly cardName = input<string>('Apex Black Diamond Elite');
   public readonly cardNumberMasked = input<string>('•••• •••• •••• 8821');
+  public readonly cardType = input<string>('');
   public readonly isFrozen = input<boolean>(false);
   public readonly spendingLimit = input<number>(25000);
   public readonly currentBalance = input<number>(0);
@@ -286,13 +294,17 @@ export class CardControlsWidgetComponent {
   }
 
   protected async onToggleFreeze(): Promise<void> {
+    const cardId = this.cardId();
+    if (!cardId) return;
     const nextState = !this.isFrozenState();
     this.isFrozenState.set(nextState);
-    await this.banking.setCardFreeze(this.cardId(), nextState);
+    await this.banking.setCardFreeze(cardId, nextState);
   }
 
   protected onLimitChange(val: number): void {
+    const cardId = this.cardId();
+    if (!cardId) return;
     this.spendingLimitState.set(val);
-    this.banking.updateCardLimit(this.cardId(), val);
+    this.banking.updateCardLimit(cardId, val);
   }
 }

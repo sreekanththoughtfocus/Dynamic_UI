@@ -1,9 +1,8 @@
 <div class="banking-shell">
-  <!-- Top Navbar -->
   <header class="banking-topbar">
     <div class="topbar-left">
       <div class="brand-logo">
-        <svg class="brand-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <svg class="brand-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           <path d="M9 12l2 2 4-4" />
         </svg>
@@ -13,7 +12,6 @@
     </div>
 
     <div class="topbar-center">
-      <!-- Active LLM Gateway Indicator -->
       <div class="llm-status-pill" title="Active Generative AI Gateway Backend">
         <span class="llm-pulse"></span>
         <span class="llm-label">AI Engine:</span>
@@ -27,61 +25,62 @@
         <span>Admin DB Console</span>
       </a>
 
-      <button class="ai-trigger-topbar" (click)="genUi.openDrawer()" aria-label="Open AI Assistant">
+      <button type="button" class="ai-trigger-topbar" (click)="genUi.openDrawer()" aria-label="Open AI Assistant">
         <span class="sparkle">✦</span>
         <span>AI Concierge</span>
       </button>
 
       <div class="user-profile-badge">
-        <div class="user-avatar">{{ (banking.currentUser()?.fullName?.charAt(0) || 'A') }}V</div>
+        <div class="user-avatar" aria-hidden="true">{{ initials() }}</div>
         <div class="user-info">
-          <span class="user-name">{{ banking.currentUser()?.fullName || 'Alex Vance' }}</span>
-          <span class="user-tier">{{ banking.currentUser()?.role || 'Private Client' }}</span>
+          <span class="user-name">{{ displayName() }}</span>
+          <span class="user-tier">{{ displayRole() }}</span>
         </div>
       </div>
+
+      <button type="button" class="sign-out-btn" (click)="signOut()" [disabled]="signingOut()">
+        {{ signingOut() ? 'Signing out…' : 'Sign out' }}
+      </button>
     </div>
   </header>
 
-  <!-- App Body Layout -->
   <div class="app-body-container">
-    <!-- Sidebar -->
     <aside class="banking-sidebar">
-      <nav class="sidebar-nav">
+      <nav class="sidebar-nav" aria-label="Banking">
         <a routerLink="/dashboard" routerLinkActive="active" class="nav-item">
-          <span class="nav-icon">📊</span>
+          <span class="nav-icon" aria-hidden="true">📊</span>
           <span class="nav-label">Dashboard</span>
         </a>
 
         <a routerLink="/statements" routerLinkActive="active" class="nav-item">
-          <span class="nav-icon">📑</span>
+          <span class="nav-icon" aria-hidden="true">📑</span>
           <span class="nav-label">Statements</span>
         </a>
 
         <a routerLink="/cards" routerLinkActive="active" class="nav-item">
-          <span class="nav-icon">💳</span>
+          <span class="nav-icon" aria-hidden="true">💳</span>
           <span class="nav-label">Cards & PIN</span>
         </a>
 
         <a routerLink="/security" routerLinkActive="active" class="nav-item">
-          <span class="nav-icon">🔒</span>
+          <span class="nav-icon" aria-hidden="true">🔒</span>
           <span class="nav-label">Security & Password</span>
         </a>
 
         <a routerLink="/transfers" routerLinkActive="active" class="nav-item">
-          <span class="nav-icon">💸</span>
+          <span class="nav-icon" aria-hidden="true">💸</span>
           <span class="nav-label">Transfers</span>
         </a>
 
         <div class="sidebar-divider"></div>
 
         <a routerLink="/admin" routerLinkActive="active" class="nav-item admin-nav-item">
-          <span class="nav-icon">🛠️</span>
+          <span class="nav-icon" aria-hidden="true">🛠️</span>
           <span class="nav-label">Admin Console</span>
           <span class="admin-chip">EF Core</span>
         </a>
       </nav>
 
-      <!-- Sidebar Bottom Info -->
       <div class="sidebar-footer">
         <div class="support-card">
           <span class="support-title">24/7 Concierge</span>
@@ -91,13 +90,11 @@
       </div>
     </aside>
 
-    <!-- Main Content Area -->
     <main class="banking-content-area">
-      <!-- Toast Notification Notification -->
       @if (banking.notification(); as toast) {
         <div class="global-toast" role="status" aria-live="polite">
           <span>{{ toast }}</span>
-          <button class="toast-close" (click)="banking.notification.set(null)">✕</button>
+          <button type="button" class="toast-close" (click)="banking.notification.set(null)" aria-label="Dismiss notification">✕</button>
         </div>
       }
 
@@ -108,5 +105,4 @@
   </div>
 </div>
 
-<!-- Floating AI Assistant Drawer (From generative-ui Library) -->
 <gen-ui-chat-drawer />

@@ -7,6 +7,7 @@ import {
 import { provideHttpClient } from '@angular/common/http';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideGenerativeUi } from 'generative-ui';
+import { SESSION_TOKEN_KEY } from './core/auth/auth.service';
 import { routes } from './app.routes';
 import { BankingGenUiInitService } from './generative-ui-setup/banking-gen-ui-init.service';
 
@@ -21,6 +22,7 @@ export const appConfig: ApplicationConfig = {
       assistantSubtitle: 'Multi-LLM Dynamic UI Engine',
       initialMessage:
         'Welcome to Apex Premier Banking! I am your AI Banking Concierge powered by Dynamic UI. I can render interactive financial charts (Pie, Doughnut, Bar, Line), budget trackers, loan calculators, currency converters, account statements, and card PIN/security controls. How can I assist you today?',
+      getAccessToken: () => sessionStorage.getItem(SESSION_TOKEN_KEY),
       suggestedPrompts: [
         'I want the chart as a pi chart',
         'Show my expenses breakdown as a doughnut chart',
@@ -29,7 +31,7 @@ export const appConfig: ApplicationConfig = {
         'Convert 1,000 USD to EUR currency',
         'Show my recent checking account statement',
         'I want to reset the PIN for my Debit Card',
-        'Temporarily freeze my Platinum Credit Card',
+        'Freeze my debit card',
       ],
     }),
     provideAppInitializer(() => {

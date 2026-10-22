@@ -118,12 +118,18 @@ export class GenUiService {
         availableWidgets: this.registry.getWidgetsSchema(),
       };
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream, application/x-ndjson, text/plain',
+      };
+      const accessToken = this.config.getAccessToken?.();
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(this.config.apiEndpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream, application/x-ndjson, text/plain',
-        },
+        headers,
         body: JSON.stringify(payload),
         signal: this.abortController.signal,
       });

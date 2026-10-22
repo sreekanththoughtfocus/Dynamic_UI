@@ -1,0 +1,74 @@
+<main class="login-screen">
+  <section class="login-card" aria-labelledby="login-title">
+    <div class="brand-logo">
+      <svg class="brand-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        <path d="M9 12l2 2 4-4" />
+      </svg>
+      <span class="brand-name">APEX<span class="brand-accent">BANK</span></span>
+      <span class="brand-edition">PREMIER</span>
+    </div>
+
+    <h1 id="login-title">Sign in</h1>
+    <p class="login-lead">Access your accounts, cards, transfers, and AI concierge.</p>
+
+    <form class="login-form" (submit)="onSubmit($event)" novalidate [attr.aria-busy]="submitting()">
+      @if (error(); as message) {
+        <p class="form-error" role="alert">{{ message }}</p>
+      }
+
+      <div class="field">
+        <label for="username">Username</label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          autocomplete="username"
+          autocapitalize="none"
+          spellcheck="false"
+          [value]="username()"
+          (input)="onUsernameInput($event)"
+          [disabled]="submitting()"
+          [attr.aria-invalid]="error() ? true : null"
+        />
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="password-row">
+          <input
+            id="password"
+            name="password"
+            [type]="showPassword() ? 'text' : 'password'"
+            autocomplete="current-password"
+            [value]="password()"
+            (input)="onPasswordInput($event)"
+            [disabled]="submitting()"
+            [attr.aria-invalid]="error() ? true : null"
+          />
+          <button
+            type="button"
+            class="text-btn"
+            (click)="showPassword.update((visible) => !visible)"
+            [attr.aria-pressed]="showPassword()"
+          >
+            {{ showPassword() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+      </div>
+
+      <button type="submit" class="sign-in-btn" [disabled]="submitting()">
+        {{ submitting() ? 'Signing in…' : 'Sign in' }}
+      </button>
+    </form>
+
+    <aside class="demo-card">
+      <p class="demo-title">Demo client</p>
+      <p><span>Username</span> alex.vance</p>
+      <p><span>Password</span> ApexSecure2026!</p>
+      <button type="button" class="text-btn demo-fill" (click)="useDemoClient()" [disabled]="submitting()">
+        Use demo client
+      </button>
+    </aside>
+  </section>
+</main>

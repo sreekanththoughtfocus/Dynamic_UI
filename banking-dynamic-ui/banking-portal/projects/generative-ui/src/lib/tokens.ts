@@ -12,7 +12,7 @@ export const GEN_UI_CONFIG = new InjectionToken<GenUiConfig>('GEN_UI_CONFIG', {
     suggestedPrompts: [
       'Show my recent checking account statement',
       'I want to reset the PIN for my Debit Card',
-      'Temporarily freeze my Platinum Credit Card',
+      'Freeze my debit card',
       'Help me reset my online banking password',
       'Transfer $250 to emergency savings',
     ],

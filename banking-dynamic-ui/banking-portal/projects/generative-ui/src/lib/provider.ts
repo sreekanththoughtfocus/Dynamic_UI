@@ -20,11 +20,12 @@ export function provideGenerativeUi(
         suggestedPrompts: config?.suggestedPrompts ?? [
           'Show my recent checking account statement',
           'I want to reset the PIN for my Debit Card',
-          'Temporarily freeze my Platinum Credit Card',
+          'Freeze my debit card',
           'Help me reset my online banking password',
           'Transfer $250 to emergency savings',
         ],
         defaultProvider: config?.defaultProvider ?? 'Multi-LLM Gateway',
+        getAccessToken: config?.getAccessToken,
       },
     },
     GenUiRegistryService,

@@ -163,10 +163,14 @@ export class BankingGenUiInitService {
           freeze: 'Boolean: true to freeze/lock, false to unfreeze',
         },
         handler: async (input: { cardId?: string; freeze?: boolean }) => {
-          const cardId = input.cardId ?? 'card-crd-01';
-          const freeze = input.freeze ?? true;
-          await this.banking.setCardFreeze(cardId, freeze);
-          return { cardId, isFrozen: freeze, status: 'success' };
+          if (!input.cardId || typeof input.freeze !== 'boolean') {
+            return {
+              status: 'error',
+              message: 'Say which card to change, for example "Freeze my debit card".',
+            };
+          }
+          await this.banking.setCardFreeze(input.cardId, input.freeze);
+          return { cardId: input.cardId, isFrozen: input.freeze, status: 'success' };
         },
       },
       {

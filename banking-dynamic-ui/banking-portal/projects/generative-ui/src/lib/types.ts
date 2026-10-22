@@ -49,6 +49,7 @@ export interface GenUiConfig {
   initialMessage?: string;
   suggestedPrompts?: string[];
   defaultProvider?: string;
+  getAccessToken?: () => string | null;
 }
 
 export interface StreamEvent {

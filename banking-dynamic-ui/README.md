@@ -66,7 +66,7 @@ Easily toggle between local and cloud LLMs in `banking-api/appsettings.json`:
 ### Step 1: Start the .NET Core Backend API
 ```bash
 cd banking-dynamic-ui/banking-api
-dotnet run
+dotnet run  ("%USERPROFILE%\.dotnet\dotnet.exe" run)
 ```
 *The backend starts at `http://localhost:5050`.*
 

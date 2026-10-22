@@ -210,6 +210,7 @@ import { BankingStateService } from '../../../core/services/banking.service';
 export class TransferConfirmWidgetComponent {
   private readonly banking = inject(BankingStateService);
 
+  public readonly fromAccountId = input<string>('acc-chk-01');
   public readonly fromAccount = input<string>('Premier Checking (CHK-98214-01)');
   public readonly recipient = input<string>('Alice Vance (Emergency Reserve)');
   public readonly amount = input<number>(250);
@@ -224,7 +225,7 @@ export class TransferConfirmWidgetComponent {
     this.isAuthorizing.set(true);
     try {
       await this.banking.transferFunds(
-        'acc-chk-01',
+        this.fromAccountId(),
         this.recipient(),
         this.amount(),
         this.note(),
