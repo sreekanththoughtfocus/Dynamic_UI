@@ -10,23 +10,15 @@ import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BankingStateService } from '../../../core/services/banking.service';
 
-interface CurrencyInfo {
-  code: string;
-  name: string;
-  symbol: string;
-  flag: string;
-  rateToUsd: number;
-}
-
-const SUPPORTED_CURRENCIES: CurrencyInfo[] = [
-  { code: 'USD', name: 'US Dollar', symbol: '$', flag: '🇺🇸', rateToUsd: 1.0 },
-  { code: 'EUR', name: 'Euro', symbol: '€', flag: '🇪🇺', rateToUsd: 1.085 },
-  { code: 'GBP', name: 'British Pound', symbol: '£', flag: '🇬🇧', rateToUsd: 1.295 },
-  { code: 'CHF', name: 'Swiss Franc', symbol: 'CHF', flag: '🇨🇭', rateToUsd: 1.135 },
-  { code: 'CAD', name: 'Canadian Dollar', symbol: 'CA$', flag: '🇨🇦', rateToUsd: 0.735 },
-  { code: 'AUD', name: 'Australian Dollar', symbol: 'A$', flag: '🇦🇺', rateToUsd: 0.665 },
-  { code: 'JPY', name: 'Japanese Yen', symbol: '¥', flag: '🇯🇵', rateToUsd: 0.0066 },
-  { code: 'SGD', name: 'Singapore Dollar', symbol: 'S$', flag: '🇸🇬', rateToUsd: 0.755 },
+const SUPPORTED_CURRENCIES = [
+  { code: 'USD', flag: '🇺🇸' },
+  { code: 'EUR', flag: '🇪🇺' },
+  { code: 'GBP', flag: '🇬🇧' },
+  { code: 'CHF', flag: '🇨🇭' },
+  { code: 'CAD', flag: '🇨🇦' },
+  { code: 'AUD', flag: '🇦🇺' },
+  { code: 'JPY', flag: '🇯🇵' },
+  { code: 'SGD', flag: '🇸🇬' },
 ];
 
 @Component({
@@ -89,7 +81,11 @@ const SUPPORTED_CURRENCIES: CurrencyInfo[] = [
           <div class="input-col">
             <span class="row-label">Recipient Receives</span>
             <span class="val-display">
-              {{ convertedAmount() | number: '1.2-2' }}
+              @if (exchangeRate() == null) {
+                —
+              } @else {
+                {{ convertedAmount() | number: '1.2-2' }}
+              }
             </span>
           </div>
           <div class="selector-col">
@@ -111,7 +107,14 @@ const SUPPORTED_CURRENCIES: CurrencyInfo[] = [
         <div class="rate-item">
           <span class="detail-label">Interbank Exchange Rate</span>
           <span class="detail-val">
-            1 {{ fromCurrency() }} = {{ exchangeRate() | number: '1.4-4' }} {{ toCurrency() }}
+            @if (rateError()) {
+              Live rates unavailable
+            } @else if (exchangeRate() == null) {
+              Loading live rate…
+            } @else {
+              1 {{ fromCurrency() }} = {{ exchangeRate() | number: '1.4-6' }} {{ toCurrency() }}
+              · {{ rateSource() }} {{ rateAsOf() }}
+            }
           </span>
         </div>
         <div class="rate-item">
@@ -122,11 +125,8 @@ const SUPPORTED_CURRENCIES: CurrencyInfo[] = [
 
       <!-- Actions -->
       <div class="card-footer">
-        <button type="button" class="action-btn" (click)="onLockRate()">
-          🔒 Lock Rate (60m)
-        </button>
-        <button type="button" class="action-btn primary" (click)="onExecuteTransfer()">
-          💸 Execute FX Exchange
+        <button type="button" class="action-btn primary" (click)="onLockRate()" [disabled]="exchangeRate() == null || locking()">
+          @if (locking()) { Saving rate… } @else { Save locked rate }
         </button>
       </div>
     </div>
@@ -338,27 +338,34 @@ export class CurrencyExchangeWidgetComponent {
   protected readonly amount = signal<number>(1000);
   protected readonly fromCurrency = signal<string>('USD');
   protected readonly toCurrency = signal<string>('EUR');
+  protected readonly perUsd = signal<Record<string, number>>({});
+  protected readonly rateSource = signal('');
+  protected readonly rateAsOf = signal('');
+  protected readonly rateError = signal<string | null>(null);
+  protected readonly locking = signal(false);
 
   protected readonly currencies = SUPPORTED_CURRENCIES;
 
   constructor() {
-    setTimeout(() => {
+    queueMicrotask(() => {
       if (this.initialAmount()) this.amount.set(this.initialAmount());
       if (this.initialFrom()) this.fromCurrency.set(this.initialFrom());
       if (this.initialTo()) this.toCurrency.set(this.initialTo());
     });
+    void this.refreshRates();
   }
 
   protected readonly exchangeRate = computed(() => {
-    const from = this.currencies.find((c) => c.code === this.fromCurrency());
-    const to = this.currencies.find((c) => c.code === this.toCurrency());
-    if (!from || !to) return 1.0;
-    // Rate: from.rateToUsd / to.rateToUsd
-    return from.rateToUsd / to.rateToUsd;
+    const table = this.perUsd();
+    const from = this.fromCurrency() === 'USD' ? 1 : table[this.fromCurrency()];
+    const to = this.toCurrency() === 'USD' ? 1 : table[this.toCurrency()];
+    if (!from || !to) return null;
+    return to / from;
   });
 
   protected readonly convertedAmount = computed(() => {
-    return this.amount() * this.exchangeRate();
+    const rate = this.exchangeRate();
+    return rate == null ? 0 : this.amount() * rate;
   });
 
   protected onAmountChange(val: number): void {
@@ -371,15 +378,28 @@ export class CurrencyExchangeWidgetComponent {
     this.toCurrency.set(temp);
   }
 
-  protected onLockRate(): void {
-    this.banking.showToast(
-      `🔒 Guaranteed FX Rate 1 ${this.fromCurrency()} = ${this.exchangeRate().toFixed(4)} ${this.toCurrency()} locked for 60 minutes.`,
-    );
+  protected async refreshRates(): Promise<void> {
+    const table = await this.banking.loadFxRates();
+    if (!table) {
+      this.rateError.set('The rate service did not respond.');
+      return;
+    }
+    this.perUsd.set(table.perUsd);
+    this.rateSource.set(table.source);
+    this.rateAsOf.set(table.asOf);
+    this.rateError.set(null);
   }
 
-  protected onExecuteTransfer(): void {
+  protected async onLockRate(): Promise<void> {
+    this.locking.set(true);
+    const locked = await this.banking.lockFxRate(this.fromCurrency(), this.toCurrency(), this.amount());
+    this.locking.set(false);
+    if (!locked) {
+      this.banking.showToast('The live rate could not be locked.');
+      return;
+    }
     this.banking.showToast(
-      `💸 Successfully dispatched ${this.amount().toLocaleString()} ${this.fromCurrency()} -> ${this.convertedAmount().toFixed(2)} ${this.toCurrency()} at zero fee!`,
+      `Locked ${locked.amount} ${locked.from} = ${locked.converted} ${locked.to} at ${locked.rate} (${locked.source}, ${locked.asOf}). Saved to the audit log.`,
     );
   }
 }

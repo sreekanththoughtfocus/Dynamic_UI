@@ -52,6 +52,13 @@ export interface GenUiConfig {
   getAccessToken?: () => string | null;
 }
 
+export interface GenUiPageContext {
+  route?: string;
+  accountId?: string | null;
+  cardId?: string | null;
+  transactionId?: string | null;
+}
+
 export interface StreamEvent {
   type: 'delta' | 'tool_call' | 'tool_result' | 'widget' | 'provider_info' | 'done' | 'error';
   content?: string;

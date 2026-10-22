@@ -14,6 +14,10 @@ public class BankingDbContext : DbContext
     public DbSet<BankCard> Cards => Set<BankCard>();
     public DbSet<AiAuditLog> AuditLogs => Set<AiAuditLog>();
     public DbSet<UserAccount> Users => Set<UserAccount>();
+    public DbSet<Payee> Payees => Set<Payee>();
+    public DbSet<BudgetTarget> BudgetTargets => Set<BudgetTarget>();
+    public DbSet<CardDispute> Disputes => Set<CardDispute>();
+    public DbSet<TravelNotice> TravelNotices => Set<TravelNotice>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -51,6 +55,34 @@ public class BankingDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Timestamp);
+        });
+
+        modelBuilder.Entity<Payee>(entity =>
+        {
+            entity.ToTable("Payees");
+            entity.HasKey(e => e.Id);
+        });
+
+        modelBuilder.Entity<BudgetTarget>(entity =>
+        {
+            entity.ToTable("BudgetTargets");
+            entity.HasKey(e => e.Category);
+            entity.Property(e => e.MonthlyLimit).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<CardDispute>(entity =>
+        {
+            entity.ToTable("Disputes");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Amount).HasPrecision(18, 2);
+            entity.HasIndex(e => e.TransactionId);
+        });
+
+        modelBuilder.Entity<TravelNotice>(entity =>
+        {
+            entity.ToTable("TravelNotices");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TemporaryLimit).HasPrecision(18, 2);
         });
 
         // Seed initial banking dataset

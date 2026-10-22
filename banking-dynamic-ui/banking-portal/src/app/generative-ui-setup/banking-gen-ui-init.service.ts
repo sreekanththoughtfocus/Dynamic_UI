@@ -11,6 +11,16 @@ import { FinancialChartWidgetComponent } from './widgets/financial-chart-widget/
 import { BudgetAnalyticsWidgetComponent } from './widgets/budget-analytics-widget/budget-analytics-widget.component';
 import { LoanCalculatorWidgetComponent } from './widgets/loan-calculator-widget/loan-calculator-widget.component';
 import { CurrencyExchangeWidgetComponent } from './widgets/currency-exchange-widget/currency-exchange-widget.component';
+import { SubscriptionWidgetComponent } from './widgets/subscription-widget/subscription-widget.component';
+import { ActivityReviewWidgetComponent } from './widgets/activity-review-widget/activity-review-widget.component';
+import { DisputeWidgetComponent } from './widgets/dispute-widget/dispute-widget.component';
+import { ForecastWidgetComponent } from './widgets/forecast-widget/forecast-widget.component';
+import { GoalPlannerWidgetComponent } from './widgets/goal-planner-widget/goal-planner-widget.component';
+import { TravelNoticeWidgetComponent } from './widgets/travel-notice-widget/travel-notice-widget.component';
+import { AllocationWidgetComponent } from './widgets/allocation-widget/allocation-widget.component';
+import { ClarificationWidgetComponent } from './widgets/clarification-widget/clarification-widget.component';
+import { AuditTimelineWidgetComponent } from './widgets/audit-timeline-widget/audit-timeline-widget.component';
+import { MerchantInsightWidgetComponent } from './widgets/merchant-insight-widget/merchant-insight-widget.component';
 
 @Injectable({
   providedIn: 'root',
@@ -68,7 +78,79 @@ export class BankingGenUiInitService {
         description: 'In-chat instant fund transfer confirmation card with source, recipient, amount, and authorization button.',
         component: TransferConfirmWidgetComponent,
       },
+      {
+        name: 'subscriptionWidget',
+        description: 'Recurring merchants detected from posted ledger history.',
+        component: SubscriptionWidgetComponent,
+      },
+      {
+        name: 'activityReviewWidget',
+        description: 'Unusual, duplicate, and large posted charges.',
+        component: ActivityReviewWidgetComponent,
+      },
+      {
+        name: 'disputeWidget',
+        description: 'File a dispute against a posted debit.',
+        component: DisputeWidgetComponent,
+      },
+      {
+        name: 'forecastWidget',
+        description: 'Cash-flow projection for the rest of the month.',
+        component: ForecastWidgetComponent,
+      },
+      {
+        name: 'goalPlannerWidget',
+        description: 'Savings goal with a first monthly transfer.',
+        component: GoalPlannerWidgetComponent,
+      },
+      {
+        name: 'travelNoticeWidget',
+        description: 'Travel notice that updates the card spending limit.',
+        component: TravelNoticeWidgetComponent,
+      },
+      {
+        name: 'allocationWidget',
+        description: 'Split spare checking cash across savings and investments.',
+        component: AllocationWidgetComponent,
+      },
+      {
+        name: 'clarificationWidget',
+        description: 'Choose the next live banking action.',
+        component: ClarificationWidgetComponent,
+      },
+      {
+        name: 'auditTimelineWidget',
+        description: 'Recent audited concierge and customer actions.',
+        component: AuditTimelineWidgetComponent,
+      },
+      {
+        name: 'merchantInsightWidget',
+        description: 'Compare one merchant against its own posted history.',
+        component: MerchantInsightWidgetComponent,
+      },
     ]);
+
+    const liveTools = [
+      'findSubscriptions',
+      'reviewAnomalies',
+      'projectCashFlow',
+      'searchTransactions',
+      'openDispute',
+      'planSavingsGoal',
+      'setTravelNotice',
+      'suggestAllocation',
+      'explainMerchant',
+      'reviewAudit',
+      'clarifyIntent',
+      'prepareTransfer',
+    ];
+    this.registry.registerTools(
+      liveTools.map((name) => ({
+        name,
+        description: `Live ledger tool ${name}.`,
+        handler: async (input: Record<string, unknown>) => ({ status: 'ready', ...input }),
+      })),
+    );
 
     // 2. Register Client-side Tools that the LLM can execute
     this.registry.registerTools([

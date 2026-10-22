@@ -746,12 +746,14 @@ import { GenUiWidgetOutletComponent } from './gen-ui-widget-outlet.component';
 
     /* Quick Prompts Bar */
     .quick-prompts-bar {
-      padding: 8px 16px;
+      padding: 8px 16px 10px;
       background: rgba(15, 23, 42, 0.7);
       border-top: 1px solid rgba(255, 255, 255, 0.05);
       display: flex;
-      align-items: center;
-      gap: 8px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      flex-shrink: 0;
     }
     .quick-label {
       font-size: 0.7rem;
@@ -760,22 +762,23 @@ import { GenUiWidgetOutletComponent } from './gen-ui-widget-outlet.component';
     }
     .quick-chips-scroll {
       display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding-bottom: 2px;
-      scrollbar-width: none;
-    }
-    .quick-chips-scroll::-webkit-scrollbar {
-      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 148px;
+      overflow-y: auto;
+      padding-right: 2px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(56, 189, 248, 0.45) transparent;
     }
     .prompt-chip {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.1);
       color: #cbd5e1;
-      padding: 4px 10px;
+      padding: 5px 10px;
       border-radius: 9999px;
       font-size: 0.72rem;
-      white-space: nowrap;
+      line-height: 1.3;
+      text-align: left;
       cursor: pointer;
       transition: all 0.2s;
     }
@@ -783,6 +786,10 @@ import { GenUiWidgetOutletComponent } from './gen-ui-widget-outlet.component';
       background: rgba(14, 165, 233, 0.2);
       border-color: #38bdf8;
       color: #fff;
+    }
+    .prompt-chip:focus-visible {
+      outline: 2px solid #22d3ee;
+      outline-offset: 2px;
     }
 
     /* Composer */

@@ -7,6 +7,7 @@ import {
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BankingStateService } from '../../core/services/banking.service';
+import { ConciergeContextService } from '../../core/services/concierge-context.service';
 import { BankCard } from '../../core/models/banking.models';
 import { GenUiService } from 'generative-ui';
 
@@ -521,6 +522,7 @@ import { GenUiService } from 'generative-ui';
 export class CardsComponent {
   protected readonly banking = inject(BankingStateService);
   protected readonly genUi = inject(GenUiService);
+  private readonly conciergeContext = inject(ConciergeContextService);
 
   protected readonly activePinCard = signal<BankCard | null>(null);
   protected readonly modalNewPin = signal('');
@@ -528,6 +530,7 @@ export class CardsComponent {
   protected readonly modalError = signal<string | null>(null);
 
   protected async toggleFreeze(card: BankCard): Promise<void> {
+    this.conciergeContext.cardId.set(card.id);
     await this.banking.setCardFreeze(card.id, !card.isFrozen);
   }
 
@@ -536,6 +539,7 @@ export class CardsComponent {
   }
 
   protected openPinDialog(card: BankCard): void {
+    this.conciergeContext.cardId.set(card.id);
     this.activePinCard.set(card);
     this.modalNewPin.set('');
     this.modalConfirmPin.set('');
@@ -564,7 +568,11 @@ export class CardsComponent {
   }
 
   protected askAiPinReset(): void {
+    const card = this.banking.cards().find((item) => item.id === this.conciergeContext.cardId())
+      ?? this.banking.cards().find((item) => item.cardType === 'Debit');
+    const kind = card?.cardType === 'Credit' ? 'credit' : 'debit';
+    if (card) this.conciergeContext.cardId.set(card.id);
     this.genUi.openDrawer();
-    this.genUi.sendMessage('I want to reset the PIN for my Debit Card');
+    void this.genUi.sendMessage(`I want to reset the PIN for my ${kind} card`);
   }
 }

@@ -24,7 +24,9 @@ import { GenUiService } from 'generative-ui';
         <div class="net-worth-box">
           <span class="nw-label">Total Portfolio Net Worth</span>
           <span class="nw-val">{{ totalNetWorth() | currency: 'USD' }}</span>
-          <span class="nw-change">▲ +$2,450.80 (+1.02%) this month</span>
+          <span class="nw-change" [class.down]="monthChange() < 0">
+            {{ monthChange() >= 0 ? '▲' : '▼' }} {{ monthChange() | currency: 'USD' }} posted this month
+          </span>
         </div>
       </section>
 
@@ -40,21 +42,9 @@ import { GenUiService } from 'generative-ui';
             Try asking your AI Concierge to perform banking actions. The assistant doesn't just reply with text—it executes client tools and renders interactive widgets inline!
           </p>
           <div class="ai-chips-list">
-            <button class="ai-chip" (click)="askAi('Show my recent checking account statement')">
-              📑 "Show my recent checking statement"
-            </button>
-            <button class="ai-chip" (click)="askAi('I want to reset the PIN for my Debit Card')">
-              💳 "Reset PIN for my Debit Card"
-            </button>
-            <button class="ai-chip" (click)="askAi('Freeze my debit card')">
-              🔒 "Freeze my debit card"
-            </button>
-            <button class="ai-chip" (click)="askAi('Help me reset my online banking password')">
-              🔑 "Reset my login password"
-            </button>
-            <button class="ai-chip" (click)="askAi('Transfer $250 to emergency savings')">
-              💸 "Transfer $250 to emergency savings"
-            </button>
+            @for (chip of promptChips(); track chip.prompt) {
+              <button class="ai-chip" (click)="askAi(chip.prompt)">{{ chip.label }}</button>
+            }
           </div>
         </div>
         <div class="ai-hero-right">
@@ -175,6 +165,7 @@ import { GenUiService } from 'generative-ui';
       color: #34d399;
       font-weight: 600;
     }
+    .nw-change.down { color: #f87171; }
 
     /* AI Hero Showcase Card */
     .ai-hero-card {
@@ -432,6 +423,23 @@ export class DashboardComponent {
   protected readonly recentTransactions = computed(() => {
     return this.banking.transactions().slice(0, 5);
   });
+
+  protected readonly monthChange = computed(() => this.banking.insights()?.monthNetChange ?? 0);
+
+  protected readonly promptChips = computed(() => {
+    const live = this.banking.insights()?.chips ?? [];
+    if (live.length > 0) return live;
+    return [
+      { label: 'Recurring subscriptions', prompt: 'Find my recurring subscriptions' },
+      { label: 'Unusual charges', prompt: 'Anything unusual on my checking account?' },
+      { label: 'Cash-flow forecast', prompt: 'Forecast my cash flow for this month' },
+      { label: 'Monthly budget', prompt: 'Show my monthly budget' },
+    ];
+  });
+
+  constructor() {
+    void this.banking.loadInsights();
+  }
 
   protected askAi(prompt: string): void {
     this.genUi.openDrawer();

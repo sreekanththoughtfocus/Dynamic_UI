@@ -1,5 +1,5 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { GEN_UI_CONFIG } from '../tokens';
+import { GEN_UI_CONFIG, GEN_UI_PAGE_CONTEXT } from '../tokens';
 import {
   GenUiConfig,
   GenUiMessage,
@@ -14,6 +14,7 @@ import { GenUiRegistryService } from './gen-ui-registry.service';
 })
 export class GenUiService {
   private readonly config = inject<GenUiConfig>(GEN_UI_CONFIG);
+  private readonly pageContext = inject(GEN_UI_PAGE_CONTEXT, { optional: true });
   private readonly registry = inject(GenUiRegistryService);
 
   // Core signals for reactivity
@@ -116,6 +117,7 @@ export class GenUiService {
           })),
         availableTools: this.registry.getToolsSchema(),
         availableWidgets: this.registry.getWidgetsSchema(),
+        context: this.pageContext?.() ?? null,
       };
 
       const headers: Record<string, string> = {

@@ -167,6 +167,8 @@ export class BankingStateService {
   });
 
   public readonly notification = signal<string | null>(null);
+  public readonly insights = signal<InsightFeed | null>(null);
+  private readonly limitTimers = new Map<string, number>();
 
   public showToast(message: string): void {
     this.notification.set(message);
@@ -197,10 +199,11 @@ export class BankingStateService {
   public async refreshFromBackend(): Promise<void> {
     const tokenAtStart = this.auth.token();
     try {
-      const [user, accounts, cards] = await Promise.all([
+      const [user, accounts, cards, transactions] = await Promise.all([
         this.api('/user-profile').then((r) => (r.ok ? r.json() : null)),
         this.api('/accounts').then((r) => (r.ok ? r.json() : null)),
         this.api('/cards').then((r) => (r.ok ? r.json() : null)),
+        this.api('/transactions?limit=40').then((r) => (r.ok ? r.json() : null)),
       ]);
 
       if (this.auth.token() !== tokenAtStart) return;
@@ -221,6 +224,8 @@ export class BankingStateService {
       }
       if (accounts) this.accounts.set(accounts);
       if (cards) this.cards.set(cards);
+      if (transactions) this.transactions.set(transactions);
+      void this.loadInsights();
     } catch {
       // Offline fallback state
     }
@@ -292,31 +297,41 @@ export class BankingStateService {
 
   public async resetCardPin(cardId: string, newPin: string): Promise<boolean> {
     try {
-      await this.api(`/cards/${cardId}/pin`, {
+      const res = await this.api(`/cards/${cardId}/pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId, newPin }),
       });
+      if (!res.ok) {
+        this.showToast('PIN was not updated.');
+        return false;
+      }
     } catch {
-      // Continue locally
+      this.showToast('PIN was not updated.');
+      return false;
     }
 
     const card = this.cards().find((c) => c.id === cardId);
     this.showToast(
-      `✅ PIN successfully updated for ${card ? card.cardName : 'card'}!`,
+      `PIN updated for ${card ? card.cardName : 'card'}.`,
     );
     return true;
   }
 
   public async setCardFreeze(cardId: string, freeze: boolean): Promise<boolean> {
     try {
-      await this.api(`/cards/${cardId}/freeze`, {
+      const res = await this.api(`/cards/${cardId}/freeze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId, freeze }),
       });
+      if (!res.ok) {
+        this.showToast('Card status was not changed.');
+        return false;
+      }
     } catch {
-      // Continue locally
+      this.showToast('Card status was not changed.');
+      return false;
     }
 
     this.cards.update((cards) =>
@@ -325,34 +340,131 @@ export class BankingStateService {
 
     const card = this.cards().find((c) => c.id === cardId);
     this.showToast(
-      `🛡️ ${card ? card.cardName : 'Card'} is now ${freeze ? 'FROZEN' : 'ACTIVE'}.`,
+      `${card ? card.cardName : 'Card'} is now ${freeze ? 'frozen' : 'active'}.`,
     );
     return true;
   }
 
-  public updateCardLimit(cardId: string, limit: number): boolean {
+  public updateCardLimit(cardId: string, limit: number): void {
     this.cards.update((cards) =>
       cards.map((c) => (c.id === cardId ? { ...c, spendingLimit: limit } : c)),
     );
-    this.showToast(`💳 Spending limit adjusted to $${limit.toLocaleString()}.`);
-    return true;
+    const pending = this.limitTimers.get(cardId);
+    if (pending) window.clearTimeout(pending);
+    this.limitTimers.set(
+      cardId,
+      window.setTimeout(() => {
+        void this.postCardLimit(cardId, limit);
+      }, 400),
+    );
+  }
+
+  private async postCardLimit(cardId: string, limit: number): Promise<void> {
+    try {
+      const res = await this.api(`/cards/${cardId}/limit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit }),
+      });
+      if (!res.ok) {
+        this.showToast('Spending limit was not saved.');
+        return;
+      }
+      this.showToast(`Spending limit saved at $${limit.toLocaleString()}.`);
+    } catch {
+      this.showToast('Spending limit was not saved.');
+    }
+  }
+
+  public async loadInsights(): Promise<void> {
+    try {
+      const res = await this.api('/insights');
+      if (res.ok) this.insights.set((await res.json()) as InsightFeed);
+    } catch {
+      this.insights.set(null);
+    }
+  }
+
+  public async fileDispute(transactionId: string, reason: string): Promise<{ id: string } | null> {
+    try {
+      const res = await this.api('/disputes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionId, reason }),
+      });
+      if (!res.ok) return null;
+      const filed = (await res.json()) as { id: string };
+      this.showToast(`Dispute ${filed.id} is open.`);
+      return filed;
+    } catch {
+      return null;
+    }
+  }
+
+  public async fileTravelNotice(notice: TravelNoticeRequest): Promise<boolean> {
+    try {
+      const res = await this.api('/travel-notices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(notice),
+      });
+      if (!res.ok) {
+        this.showToast('Travel notice was not saved.');
+        return false;
+      }
+      await this.refreshFromBackend();
+      this.showToast(`Travel notice saved for ${notice.destination}.`);
+      return true;
+    } catch {
+      this.showToast('Travel notice was not saved.');
+      return false;
+    }
+  }
+
+  public async lockFxRate(from: string, to: string, amount: number): Promise<FxLockResult | null> {
+    try {
+      const res = await this.api('/fx/lock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to, amount }),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as FxLockResult;
+    } catch {
+      return null;
+    }
+  }
+
+  public async loadFxRates(): Promise<FxRateTable | null> {
+    try {
+      const res = await this.api('/fx/rates');
+      if (!res.ok) return null;
+      return (await res.json()) as FxRateTable;
+    } catch {
+      return null;
+    }
   }
 
   public async resetPassword(newPassword: string): Promise<boolean> {
     try {
-      await this.api(`/security/password-reset`, {
+      const res = await this.api(`/security/password-reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newPassword }),
       });
+      if (!res.ok) {
+        this.showToast('Password was not updated.');
+        return false;
+      }
     } catch {
-      // Continue locally
+      this.showToast('Password was not updated.');
+      return false;
     }
     this.securityProfile.update((p) => ({
       ...p,
       lastPasswordChange: 'Just now',
     }));
-    this.showToast(`🔐 Online Banking password has been reset successfully.`);
+    this.showToast('Online banking password was updated.');
     return true;
   }
 
@@ -369,7 +481,7 @@ export class BankingStateService {
     }
 
     try {
-      await this.api(`/transfers`, {
+      const res = await this.api(`/transfers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -379,36 +491,56 @@ export class BankingStateService {
           note,
         }),
       });
+      if (!res.ok) {
+        this.showToast('Transfer was not posted. Check the available balance.');
+        return false;
+      }
       await this.refreshFromBackend();
     } catch {
-      this.accounts.update((accounts) =>
-        accounts.map((a) =>
-          a.id === fromAccountId
-            ? {
-                ...a,
-                balance: a.balance - amount,
-                availableBalance: a.availableBalance - amount,
-              }
-            : a,
-        ),
-      );
+      this.showToast('Transfer was not posted.');
+      return false;
     }
 
-    const newTx: BankTransaction = {
-      id: 'tx-' + Math.floor(1000 + Math.random() * 9000),
-      accountId: fromAccountId,
-      date: new Date().toISOString(),
-      description: `Transfer to ${recipient} (${note || 'Instant Wire'})`,
-      category: 'Transfer',
-      amount: -amount,
-      type: 'Debit',
-      status: 'Posted',
-    };
-
-    this.transactions.update((txs) => [newTx, ...txs]);
     this.showToast(
-      `💸 Transferred $${amount.toFixed(2)} to ${recipient} successfully!`,
+      `Transferred $${amount.toFixed(2)} to ${recipient}.`,
     );
     return true;
   }
+}
+
+export interface InsightChip {
+  label: string;
+  prompt: string;
+}
+
+export interface InsightFeed {
+  netWorth: number;
+  monthNetChange: number;
+  projectedCheckingEnd: number;
+  checkingAccountId: string;
+  chips: InsightChip[];
+}
+
+export interface TravelNoticeRequest {
+  destination: string;
+  cardId: string;
+  startDate: string;
+  endDate: string;
+  temporaryLimit: number;
+}
+
+export interface FxRateTable {
+  asOf: string;
+  source: string;
+  perUsd: Record<string, number>;
+}
+
+export interface FxLockResult {
+  from: string;
+  to: string;
+  amount: number;
+  rate: number;
+  converted: number;
+  asOf: string;
+  source: string;
 }

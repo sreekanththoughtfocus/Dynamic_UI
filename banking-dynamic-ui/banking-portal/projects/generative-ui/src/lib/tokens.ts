@@ -1,5 +1,5 @@
 import { InjectionToken } from '@angular/core';
-import { GenUiConfig } from './types';
+import { GenUiConfig, GenUiPageContext } from './types';
 
 export const GEN_UI_CONFIG = new InjectionToken<GenUiConfig>('GEN_UI_CONFIG', {
   providedIn: 'root',
@@ -18,3 +18,7 @@ export const GEN_UI_CONFIG = new InjectionToken<GenUiConfig>('GEN_UI_CONFIG', {
     ],
   }),
 });
+
+export const GEN_UI_PAGE_CONTEXT = new InjectionToken<() => GenUiPageContext | null>(
+  'GEN_UI_PAGE_CONTEXT',
+);

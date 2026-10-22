@@ -18,6 +18,10 @@ builder.Services.AddDbContext<BankingDbContext>(options =>
 
 // Services
 builder.Services.AddScoped<IBankingService, BankingService>();
+builder.Services.AddScoped<ILedgerBootstrap, LedgerBootstrap>();
+builder.Services.AddScoped<ILedgerInsightService, LedgerInsightService>();
+builder.Services.AddScoped<IConciergePlanner, ConciergePlanner>();
+builder.Services.AddSingleton<IFxRateService, FxRateService>();
 builder.Services.AddSingleton<AuthSessionStore>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient(nameof(CursorCloudAgentsClient), client =>
@@ -46,6 +50,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BankingDbContext>();
     await db.Database.EnsureCreatedAsync();
+    await scope.ServiceProvider.GetRequiredService<ILedgerBootstrap>().EnsureAsync();
 }
 
 app.UseCors("AllowAngularApp");
@@ -215,6 +220,14 @@ app.MapPost("/api/cards/{cardId}/freeze", async (string cardId, FreezeCardReques
     return Results.Ok(new { success, isFrozen = req.Freeze, message = $"Card {(req.Freeze ? "frozen" : "unfrozen")} successfully." });
 });
 
+app.MapPost("/api/cards/{cardId}/limit", async (string cardId, UpdateLimitRequest req, IBankingService banking) =>
+{
+    var success = await banking.UpdateCardLimitAsync(cardId, req.Limit, "User");
+    return success
+        ? Results.Ok(new { success = true, limit = req.Limit })
+        : Results.NotFound(new { success = false, message = "Card not found." });
+});
+
 app.MapPost("/api/security/password-reset", async (HttpContext context, ResetPasswordRequest req, IBankingService banking) =>
 {
     var userId = context.Items["UserId"] as string;
@@ -233,6 +246,64 @@ app.MapPost("/api/transfers", async (TransferFundsRequest req, IBankingService b
 });
 
 app.MapGet("/api/audit-logs", async (IBankingService banking) => Results.Ok(await banking.GetAuditLogsAsync()));
+
+app.MapGet("/api/transactions", async (int? limit, IBankingService banking) =>
+    Results.Ok(await banking.GetStatementsAsync(null, Math.Clamp(limit ?? 40, 1, 100))));
+
+app.MapGet("/api/insights", async (ILedgerInsightService insights, CancellationToken ct) =>
+    Results.Ok(await insights.GetFeedAsync(ct)));
+
+app.MapPost("/api/disputes", async (FileDisputeRequest req, ILedgerInsightService insights, CancellationToken ct) =>
+{
+    try
+    {
+        var dispute = await insights.FileDisputeAsync(req.TransactionId, req.Reason, ct);
+        return Results.Ok(dispute);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
+
+app.MapPost("/api/travel-notices", async (TravelNoticeRequest req, ILedgerInsightService insights, CancellationToken ct) =>
+{
+    try
+    {
+        var notice = await insights.FileTravelNoticeAsync(req, ct);
+        return Results.Ok(notice);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
+
+app.MapGet("/api/fx/rates", async (IFxRateService fx, CancellationToken ct) =>
+{
+    try
+    {
+        var table = await fx.GetTableAsync(ct);
+        return Results.Ok(new { asOf = table.AsOf.ToString("yyyy-MM-dd"), source = table.Source, perUsd = table.PerUsd });
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        return Results.Problem(title: "Live FX rates are unavailable", detail: ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
+
+app.MapPost("/api/fx/lock", async (FxLockRequest req, IFxRateService fx, CancellationToken ct) =>
+{
+    try
+    {
+        var quote = await fx.LockAsync(req.From, req.To, req.Amount <= 0 ? 1 : req.Amount, ct);
+        return Results.Ok(quote);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        return Results.Problem(title: "Live FX rates are unavailable", detail: ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
 
 // User Management & Profile
 app.MapGet("/api/user-profile", async (HttpContext context, IBankingService banking) =>
@@ -262,9 +333,10 @@ app.MapPut("/api/admin/users/{id}", async (string id, UserAccount user, IBanking
 
 app.MapGet("/api/admin/overview", async (IBankingService banking) => Results.Ok(await banking.GetDatabaseOverviewAsync()));
 
-app.MapPost("/api/admin/reset-db", async (IBankingService banking) =>
+app.MapPost("/api/admin/reset-db", async (IBankingService banking, ILedgerBootstrap bootstrap) =>
 {
     await banking.ResetDatabaseAsync();
+    await bootstrap.EnsureAsync();
     return Results.Ok(new { success = true, message = "Database wiped and re-seeded with initial records." });
 });
 

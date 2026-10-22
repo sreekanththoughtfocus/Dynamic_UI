@@ -8,6 +8,8 @@ import {
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BankingStateService } from '../../core/services/banking.service';
+import { ConciergeContextService } from '../../core/services/concierge-context.service';
+import { BankTransaction } from '../../core/models/banking.models';
 import { GenUiService } from 'generative-ui';
 
 @Component({
@@ -60,8 +62,8 @@ import { GenUiService } from 'generative-ui';
           <option value="Dining">Dining</option>
           <option value="Electronics">Electronics</option>
         </select>
-        <button class="export-pdf-btn" (click)="exportStatement()">
-          ⬇ Download Official PDF
+        <button class="export-pdf-btn" (click)="askAboutAccount()">
+          Ask AI about this account
         </button>
       </div>
 
@@ -87,6 +89,7 @@ import { GenUiService } from 'generative-ui';
                 <td class="date-col">{{ tx.date | date: 'mediumDate' }}</td>
                 <td class="desc-col">
                   <strong>{{ tx.description }}</strong>
+                  <button type="button" class="explain-btn" (click)="explainCharge(tx)">Explain with AI</button>
                 </td>
                 <td>
                   <span class="category-tag">{{ tx.category }}</span>
@@ -294,6 +297,17 @@ import { GenUiService } from 'generative-ui';
     }
     .amount-col.pos { color: #34d399; }
     .amount-col.neg { color: #f8fafc; }
+    .explain-btn {
+      display: block;
+      margin-top: 4px;
+      background: transparent;
+      border: 0;
+      padding: 0;
+      color: #7dd3fc;
+      cursor: pointer;
+      font-size: 0.72rem;
+    }
+    .explain-btn:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
     .no-results {
       text-align: center;
       padding: 30px;
@@ -305,6 +319,7 @@ import { GenUiService } from 'generative-ui';
 export class StatementsComponent {
   protected readonly banking = inject(BankingStateService);
   protected readonly genUi = inject(GenUiService);
+  private readonly conciergeContext = inject(ConciergeContextService);
 
   protected readonly searchQuery = signal('');
   protected readonly selectedCategory = signal('all');
@@ -336,14 +351,25 @@ export class StatementsComponent {
     this.banking.selectedAccountId.set(id);
   }
 
-  protected exportStatement(): void {
-    this.banking.showToast(
-      `📑 Exported monthly statement PDF for ${this.selectedAccount()?.accountType}.`,
-    );
+  protected askAboutAccount(): void {
+    const account = this.selectedAccount();
+    const kind = account?.accountType.toLowerCase().includes('sav')
+      ? 'savings'
+      : account?.accountType.toLowerCase().includes('wealth') || account?.accountType.toLowerCase().includes('invest')
+        ? 'investment'
+        : 'checking';
+    this.genUi.openDrawer();
+    void this.genUi.sendMessage(`Show my recent ${kind} account statement`);
+  }
+
+  protected explainCharge(tx: BankTransaction): void {
+    this.conciergeContext.transactionId.set(tx.id);
+    this.genUi.openDrawer();
+    void this.genUi.sendMessage(`Explain the ${tx.description} charge`);
   }
 
   protected askAiSummary(): void {
     this.genUi.openDrawer();
-    this.genUi.sendMessage('Analyze my recent spending across categories');
+    void this.genUi.sendMessage('Show my spending as a pie chart');
   }
 }

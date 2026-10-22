@@ -15,6 +15,24 @@ public class ChatRequest
 
     [JsonPropertyName("availableWidgets")]
     public List<WidgetDefinitionDto> AvailableWidgets { get; set; } = [];
+
+    [JsonPropertyName("context")]
+    public ChatPageContext? Context { get; set; }
+}
+
+public class ChatPageContext
+{
+    [JsonPropertyName("route")]
+    public string? Route { get; set; }
+
+    [JsonPropertyName("accountId")]
+    public string? AccountId { get; set; }
+
+    [JsonPropertyName("cardId")]
+    public string? CardId { get; set; }
+
+    [JsonPropertyName("transactionId")]
+    public string? TransactionId { get; set; }
 }
 
 public class ChatMessageItem

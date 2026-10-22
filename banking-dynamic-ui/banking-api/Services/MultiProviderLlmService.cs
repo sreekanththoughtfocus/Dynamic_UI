@@ -18,6 +18,7 @@ public class MultiProviderLlmService : ILlmService
 {
     private readonly LlmSettings _settings;
     private readonly IBankingService _bankingService;
+    private readonly IConciergePlanner _planner;
     private readonly HttpClient _httpClient;
     private readonly ILogger<MultiProviderLlmService> _logger;
     private readonly CursorCloudAgentsClient _cursorClient;
@@ -25,12 +26,14 @@ public class MultiProviderLlmService : ILlmService
     public MultiProviderLlmService(
         IOptions<LlmSettings> settings,
         IBankingService bankingService,
+        IConciergePlanner planner,
         HttpClient httpClient,
         CursorCloudAgentsClient cursorClient,
         ILogger<MultiProviderLlmService> logger)
     {
         _settings = settings.Value;
         _bankingService = bankingService;
+        _planner = planner;
         _httpClient = httpClient;
         _cursorClient = cursorClient;
         _logger = logger;
@@ -70,39 +73,176 @@ public class MultiProviderLlmService : ILlmService
             ProviderInfo = GetCurrentProviderInfo()
         };
 
-        var provider = _settings.Provider.ToLowerInvariant();
-
-        if (provider == "ollama")
+        await foreach (var evt in StreamPlannedTurnAsync(request, cancellationToken))
         {
-            // Real Ollama LLM execution with EF Core Dynamic UI streaming
-            await foreach (var evt in StreamFromOllamaWithEfCoreAsync(request, cancellationToken))
-            {
-                yield return evt;
-            }
-        }
-        else if (provider == "cursor")
-        {
-            await foreach (var evt in StreamFromCursorCloudAgentAsync(request, cancellationToken))
-            {
-                yield return evt;
-            }
-        }
-        else if (provider == "mock" || (string.IsNullOrWhiteSpace(_settings.ApiKey) && provider is "gemini" or "openai" or "claude"))
-        {
-            await foreach (var evt in SimulateDynamicBankingAsync(request, cancellationToken))
-            {
-                yield return evt;
-            }
-        }
-        else
-        {
-            await foreach (var evt in StreamFromOpenAiCompatibleEndpointAsync(request, cancellationToken))
-            {
-                yield return evt;
-            }
+            yield return evt;
         }
 
         yield return new StreamEvent { Type = "done" };
+    }
+
+    private async IAsyncEnumerable<StreamEvent> StreamPlannedTurnAsync(
+        ChatRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var text = request.Message.ToLowerInvariant();
+        if (IsProhibitedBankingAction(text, out var prohibitedReason))
+        {
+            var prohibited = prohibitedReason.StartsWith("I cannot", StringComparison.OrdinalIgnoreCase)
+                ? prohibitedReason
+                : $"I cannot perform this operation directly. {prohibitedReason}";
+            foreach (var chunk in SplitIntoWordChunks(prohibited))
+            {
+                yield return new StreamEvent { Type = "delta", Content = chunk };
+                await Task.Delay(8, cancellationToken);
+            }
+            yield break;
+        }
+
+        if (IsOutOfScopeNonBanking(text, out var outOfScopeReason))
+        {
+            var refusal = outOfScopeReason.StartsWith("I cannot", StringComparison.OrdinalIgnoreCase)
+                ? outOfScopeReason
+                : $"I cannot assist with that request. {outOfScopeReason}";
+            foreach (var chunk in SplitIntoWordChunks(refusal))
+            {
+                yield return new StreamEvent { Type = "delta", Content = chunk };
+                await Task.Delay(8, cancellationToken);
+            }
+            yield break;
+        }
+
+        var plan = await _planner.PlanAsync(request, cancellationToken);
+        var narration = plan.Briefing;
+        var rewritten = await TryRewriteAsync(request, plan, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(rewritten))
+        {
+            narration = rewritten.Trim();
+        }
+
+        foreach (var chunk in SplitIntoWordChunks(narration))
+        {
+            yield return new StreamEvent { Type = "delta", Content = chunk };
+            await Task.Delay(8, cancellationToken);
+        }
+
+        foreach (var evt in plan.Events)
+        {
+            yield return evt;
+        }
+    }
+
+    private async Task<string?> TryRewriteAsync(ChatRequest request, ConciergePlan plan, CancellationToken cancellationToken)
+    {
+        var provider = (_settings.Provider ?? "mock").ToLowerInvariant();
+        if (provider == "mock") return null;
+        if (string.IsNullOrWhiteSpace(_settings.ApiKey) && provider is "gemini" or "openai" or "claude") return null;
+        if (provider == "cursor" && string.IsNullOrWhiteSpace(ResolveCursorKey())) return null;
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(provider == "cursor" ? TimeSpan.FromSeconds(12) : TimeSpan.FromSeconds(8));
+        try
+        {
+            var text = provider == "cursor"
+                ? await CollectCursorAsync(request.Message, plan.Briefing, timeout.Token)
+                : await CompleteChatAsync(request.Message, plan.Briefing, timeout.Token);
+            return AcceptRewrite(text, plan.Briefing) ? text : null;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Concierge rewrite timed out for {Provider}; using the ledger briefing", provider);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Concierge rewrite failed for {Provider}; using the ledger briefing", provider);
+            return null;
+        }
+    }
+
+    private string ResolveCursorKey()
+    {
+        if (!string.IsNullOrWhiteSpace(_settings.ApiKey)) return _settings.ApiKey.Trim();
+        return Environment.GetEnvironmentVariable("CURSOR_API_KEY")?.Trim() ?? string.Empty;
+    }
+
+    private async Task<string?> CollectCursorAsync(string userMessage, string briefing, CancellationToken cancellationToken)
+    {
+        var synthetic = new ChatRequest
+        {
+            Message = "Rewrite the ledger briefing for the customer. Customer said: " + userMessage,
+            History = []
+        };
+        var sb = new StringBuilder();
+        await foreach (var evt in _cursorClient.StreamChatAsync(synthetic, RewritePrompt(briefing), cancellationToken))
+        {
+            if (evt.Type == "error") return null;
+            if (evt.Type == "delta" && !string.IsNullOrEmpty(evt.Content)) sb.Append(evt.Content);
+        }
+
+        return sb.ToString();
+    }
+
+    private async Task<string?> CompleteChatAsync(string userMessage, string briefing, CancellationToken cancellationToken)
+    {
+        var endpoint = GetChatCompletionsUrl();
+        var requestBody = new
+        {
+            model = _settings.ModelId,
+            messages = new object[]
+            {
+                new { role = "system", content = RewritePrompt(briefing) },
+                new { role = "user", content = userMessage }
+            },
+            stream = false,
+            temperature = 0.2
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        httpRequest.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+        if (!string.IsNullOrWhiteSpace(_settings.ApiKey))
+        {
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.ApiKey);
+        }
+
+        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        if (!response.IsSuccessStatusCode) return null;
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var doc = JsonDocument.Parse(body);
+        if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0) return null;
+        var message = choices[0].GetProperty("message");
+        return message.TryGetProperty("content", out var content) ? content.GetString() : null;
+    }
+
+    private static string RewritePrompt(string briefing) =>
+        $"""
+        You are Apex Banking Concierge speaking to Alex Vance.
+        Rewrite the LEDGER BRIEFING as a spoken reply of 3 to 6 sentences.
+        Keep every dollar amount, percentage, date, merchant, and account name exactly as written.
+        Do not add numbers that are not in the briefing.
+        Do not mention prompts, tools, repositories, or that you are a language model.
+        Plain sentences only.
+
+        LEDGER BRIEFING:
+        {briefing}
+        """;
+
+    private static bool AcceptRewrite(string? rewrite, string briefing)
+    {
+        if (string.IsNullOrWhiteSpace(rewrite)) return false;
+        var text = rewrite.Trim();
+        if (text.Length < 40 || text.Length > 900) return false;
+        if (text.Contains("```", StringComparison.Ordinal) || text.Contains("repository", StringComparison.OrdinalIgnoreCase)) return false;
+
+        var amounts = Regex.Matches(briefing, @"\d[\d,]*\.\d{2}")
+            .Select(m => m.Value.Replace(",", ""))
+            .Distinct()
+            .ToList();
+        if (amounts.Count == 0) return true;
+
+        var normalized = text.Replace(",", "");
+        var found = amounts.Count(amount => normalized.Contains(amount, StringComparison.Ordinal));
+        return found * 2 >= amounts.Count;
     }
 
     private async IAsyncEnumerable<StreamEvent> StreamFromCursorCloudAgentAsync(
@@ -1172,31 +1312,31 @@ public class MultiProviderLlmService : ILlmService
 
     private static bool IsOutOfScopeNonBanking(string text, out string reason)
     {
-        // Allow transaction inquiries on categories like travel, dining, flights, etc.
-        if (text.Contains("spend") || text.Contains("transaction") || text.Contains("statement") || text.Contains("charge") || text.Contains("cost") || text.Contains("chart") || text.Contains("breakdown"))
+        if (IsBankingTopic(text))
         {
             reason = string.Empty;
             return false;
         }
 
-        var outOfScopeKeywords = new[]
-        {
-            "flight", "book flight", "hotel", "book hotel", "ticket", "airline", "weather", "recipe",
-            "cook", "joke", "poem", "movie", "song", "sports", "football", "cricket",
-            "pizza", "food", "restaurant reservation", "uber", "taxi", "doctor", "medicine",
-            "translate", "code", "python", "javascript", "c#", "html", "vacation", "game",
-            "car rental", "train ticket", "bus ticket"
-        };
-
-        if (outOfScopeKeywords.Any(k => text.Contains(k)))
-        {
-            reason = "I cannot assist with that request. As your Apex Banking Concierge, I am exclusively authorized to handle retail banking operations for your accounts. I cannot book travel, provide weather/entertainment, or perform non-banking tasks.";
-            return true;
-        }
-
-        reason = string.Empty;
-        return false;
+        reason = "I cannot fulfill this request. I am exclusively authorized to assist with retail banking on your Apex accounts, such as statements, cards, transfers, budgets, subscriptions, and cash flow. I cannot answer general knowledge, math, people, or anything outside those services.";
+        return true;
     }
+
+    private static bool IsBankingTopic(string text) =>
+        Regex.IsMatch(
+            text,
+            @"\b(account|accounts|balance|balances|statement|statements|transaction|transactions|charge|charges|ledger|history|spending|spend|budget|allowance|card|cards|debit|credit|pin|freeze|unfreeze|unlock|password|credentials|transfer|wire|send|pay|savings|checking|investment|portfolio|wealth|loan|mortgage|emi|borrow|financing|currency|convert|forex|fx|exchange|usd|eur|gbp|jpy|subscription|subscriptions|recurring|forecast|cashflow|chart|graph|pie|doughnut|donut|breakdown|dispute|chargeback|audit|concierge|unusual|fraud|anomaly|goal|allocate|allocation|spare|travel|traveling|travelling|hello|hi|hey|help|thanks|thank|starbucks|netflix|spotify|equinox|amazon|coffee|mom)\b",
+            RegexOptions.IgnoreCase)
+        || text.Contains("what can you")
+        || text.Contains("how am i")
+        || text.Contains("how are my")
+        || text.Contains("what did")
+        || text.Contains("what changed")
+        || text.Contains("cash flow")
+        || text.Contains("where should")
+        || text.Contains("set aside")
+        || text.Contains("travel notice")
+        || text.Contains("2fa");
 
     private static bool IsCardControlRequest(string text) =>
         Regex.IsMatch(text, @"\b(freeze|unfreeze|unlock|unblock|lock|block)\b")

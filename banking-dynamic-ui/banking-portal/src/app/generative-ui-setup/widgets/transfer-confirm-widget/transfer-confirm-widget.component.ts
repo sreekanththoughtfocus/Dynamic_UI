@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   input,
   signal,
@@ -42,16 +43,27 @@ import { BankingStateService } from '../../../core/services/banking.service';
               <span class="d-val">{{ note() }}</span>
             </div>
             <div class="detail-item">
+              <span class="d-label">Available before transfer</span>
+              <span class="d-val">{{ availableBalance() | currency: 'USD' }}</span>
+            </div>
+            <div class="detail-item">
               <span class="d-label">Transfer Fee</span>
               <span class="d-val fee-free">$0.00 (Waived for Premier)</span>
             </div>
           </div>
 
+          @if (stepUpRequired()) {
+            <label class="step-up">
+              <input type="checkbox" [checked]="confirmed()" (change)="onConfirm($event)" />
+              I confirm this transfer of {{ amount() | currency: 'USD' }}.
+            </label>
+          }
+
           <div class="actions">
             <button
               class="authorize-btn"
               (click)="onAuthorize()"
-              [disabled]="isAuthorizing()"
+              [disabled]="isAuthorizing() || !canAuthorize()"
             >
               @if (isAuthorizing()) {
                 Processing Ledger...
@@ -216,10 +228,20 @@ export class TransferConfirmWidgetComponent {
   public readonly amount = input<number>(250);
   public readonly note = input<string>('Instant Reserve Allocation');
   public readonly availableBalance = input<number>(0);
+  public readonly stepUpRequired = input(false);
 
   protected readonly isAuthorizing = signal(false);
   protected readonly isSuccess = signal(false);
+  protected readonly confirmed = signal(false);
   protected readonly receiptNumber = signal('');
+  protected readonly canAuthorize = computed(
+    () => !this.stepUpRequired() || this.confirmed(),
+  );
+
+  protected onConfirm(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.confirmed.set(input.checked);
+  }
 
   protected async onAuthorize(): Promise<void> {
     this.isAuthorizing.set(true);

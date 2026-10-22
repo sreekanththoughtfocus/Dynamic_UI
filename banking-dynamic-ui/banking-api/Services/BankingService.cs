@@ -183,6 +183,25 @@ public class BankingService : IBankingService
         };
 
         _db.Transactions.Add(tx);
+
+        var destination = await _db.Accounts.FirstOrDefaultAsync(a =>
+            a.Id != account.Id && recipient.Contains(a.AccountNumber));
+        if (destination != null)
+        {
+            destination.Balance += amount;
+            destination.AvailableBalance += amount;
+            _db.Transactions.Add(new BankTransaction
+            {
+                Id = "tx-" + Guid.NewGuid().ToString("N")[..6],
+                AccountId = destination.Id,
+                Date = DateTime.UtcNow,
+                Description = $"Transfer from {account.AccountType} ({note})",
+                Category = "Transfer",
+                Amount = amount,
+                Type = "Credit",
+                Status = "Posted"
+            });
+        }
         _db.AuditLogs.Add(new AiAuditLog
         {
             Action = "TransferFunds",
