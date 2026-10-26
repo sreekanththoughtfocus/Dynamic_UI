@@ -18,6 +18,7 @@ public class BankingDbContext : DbContext
     public DbSet<BudgetTarget> BudgetTargets => Set<BudgetTarget>();
     public DbSet<CardDispute> Disputes => Set<CardDispute>();
     public DbSet<TravelNotice> TravelNotices => Set<TravelNotice>();
+    public DbSet<AppPropertyDocument> AppPropertyDocuments => Set<AppPropertyDocument>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -83,6 +84,15 @@ public class BankingDbContext : DbContext
             entity.ToTable("TravelNotices");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.TemporaryLimit).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<AppPropertyDocument>(entity =>
+        {
+            entity.ToTable("AppPropertyDocuments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired();
+            entity.Property(e => e.TreeJson).IsRequired();
+            entity.Property(e => e.ValuesJson).IsRequired();
         });
 
         // Seed initial banking dataset

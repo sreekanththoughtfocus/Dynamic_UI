@@ -55,6 +55,8 @@ public sealed class LedgerBootstrap : ILedgerBootstrap
             """,
             cancellationToken);
 
+        await PropertyDocumentLogic.EnsureStorageAsync(_db, cancellationToken);
+
         if (!await _db.Payees.AnyAsync(cancellationToken))
         {
             _db.Payees.AddRange(

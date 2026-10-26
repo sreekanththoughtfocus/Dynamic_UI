@@ -20,9 +20,13 @@
     </div>
 
     <div class="topbar-right">
-      <a routerLink="/admin" routerLinkActive="active" class="admin-topbar-btn" title="Open EF Core Database & User Management Admin Console">
+      <a routerLink="/admin" routerLinkActive="active" [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'ignored', fragment: 'ignored', matrixParams: 'ignored' }" class="admin-topbar-btn" title="Open EF Core Database & User Management Admin Console">
         <span class="admin-icon">🛠️</span>
         <span>Admin DB Console</span>
+      </a>
+      <a routerLink="/admin/properties" routerLinkActive="active" class="admin-topbar-btn" title="Open the dynamic property manager">
+        <span class="admin-icon">🌳</span>
+        <span>Properties</span>
       </a>
 
       <button type="button" class="ai-trigger-topbar" (click)="genUi.openDrawer()" aria-label="Open AI Assistant">
@@ -72,12 +76,22 @@
           <span class="nav-label">Transfers</span>
         </a>
 
+        <a routerLink="/settings" routerLinkActive="active" class="nav-item">
+          <span class="nav-icon" aria-hidden="true">⚙️</span>
+          <span class="nav-label">App Settings</span>
+        </a>
+
         <div class="sidebar-divider"></div>
 
-        <a routerLink="/admin" routerLinkActive="active" class="nav-item admin-nav-item">
+        <a routerLink="/admin" routerLinkActive="active" [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'ignored', fragment: 'ignored', matrixParams: 'ignored' }" class="nav-item admin-nav-item">
           <span class="nav-icon" aria-hidden="true">🛠️</span>
           <span class="nav-label">Admin Console</span>
           <span class="admin-chip">EF Core</span>
+        </a>
+        <a routerLink="/admin/properties" routerLinkActive="active" class="nav-item admin-nav-item">
+          <span class="nav-icon" aria-hidden="true">🌳</span>
+          <span class="nav-label">Property Manager</span>
+          <span class="admin-chip">JSON</span>
         </a>
       </nav>
 

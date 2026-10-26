@@ -42,4 +42,38 @@ public class AdminController : ControllerBase
     [HttpPost("transactions")]
     public async Task<IActionResult> AddTransaction(BankTransaction transaction) =>
         Ok(await _banking.AddTransactionAsync(transaction, "AdminConsole"));
+
+    [HttpGet("property-documents")]
+    public async Task<IActionResult> PropertyDocuments() =>
+        Ok(await _banking.ListPropertyDocumentsAsync());
+
+    [HttpGet("property-documents/{id}")]
+    public async Task<IActionResult> PropertyDocument(string id)
+    {
+        var document = await _banking.GetPropertyDocumentAsync(id);
+        return document == null ? NotFound(new { message = "Property document was not found." }) : Ok(document);
+    }
+
+    [HttpPut("property-documents/{id}")]
+    public async Task<IActionResult> SavePropertyDocument(string id, SavePropertyDocumentRequest request)
+    {
+        var initiator = HttpContext.Items["Username"] as string;
+        if (string.IsNullOrWhiteSpace(initiator))
+        {
+            initiator = "AdminConsole";
+        }
+
+        var result = await _banking.SavePropertyDocumentAsync(id, request, initiator);
+        if (result.NotFound)
+        {
+            return NotFound(new { message = result.Error });
+        }
+
+        if (result.Error != null)
+        {
+            return BadRequest(new { message = result.Error });
+        }
+
+        return Ok(result.Document);
+    }
 }

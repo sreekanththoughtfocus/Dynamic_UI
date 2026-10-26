@@ -53,6 +53,18 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/properties/settings.component').then((m) => m.SettingsComponent),
+      },
+      {
+        path: 'admin/properties',
+        loadComponent: () =>
+          import('./features/properties/property-manager.component').then(
+            (m) => m.PropertyManagerComponent,
+          ),
+      },
+      {
         path: 'admin',
         loadComponent: () =>
           import('./features/admin/admin.component').then((m) => m.AdminComponent),

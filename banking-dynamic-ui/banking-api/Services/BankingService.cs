@@ -28,6 +28,9 @@ public interface IBankingService
     Task<DatabaseOverviewDto> GetDatabaseOverviewAsync();
     Task<bool> ResetDatabaseAsync();
     Task<BankTransaction> AddTransactionAsync(BankTransaction tx, string initiator = "Admin");
+    Task<List<PropertyDocumentSummaryDto>> ListPropertyDocumentsAsync();
+    Task<PropertyDocumentDto?> GetPropertyDocumentAsync(string id);
+    Task<PropertySaveResult> SavePropertyDocumentAsync(string id, SavePropertyDocumentRequest request, string initiator);
 }
 
 public class BankingService : IBankingService
@@ -336,5 +339,54 @@ public class BankingService : IBankingService
 
         await _db.SaveChangesAsync();
         return tx;
+    }
+
+    public async Task<List<PropertyDocumentSummaryDto>> ListPropertyDocumentsAsync()
+    {
+        return await _db.AppPropertyDocuments.AsNoTracking()
+            .OrderBy(d => d.Name)
+            .Select(d => new PropertyDocumentSummaryDto
+            {
+                Id = d.Id,
+                Name = d.Name,
+                UpdatedAt = d.UpdatedAt,
+            })
+            .ToListAsync();
+    }
+
+    public async Task<PropertyDocumentDto?> GetPropertyDocumentAsync(string id)
+    {
+        var row = await _db.AppPropertyDocuments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id);
+        return row == null ? null : PropertyDocumentLogic.ToDto(row);
+    }
+
+    public async Task<PropertySaveResult> SavePropertyDocumentAsync(string id, SavePropertyDocumentRequest request, string initiator)
+    {
+        var normalized = PropertyDocumentLogic.Normalize(request);
+        if (normalized.Error != null)
+        {
+            return PropertySaveResult.Fail(normalized.Error);
+        }
+
+        var row = await _db.AppPropertyDocuments.FirstOrDefaultAsync(d => d.Id == id);
+        if (row == null)
+        {
+            return PropertySaveResult.Missing("Property document was not found.");
+        }
+
+        row.Name = normalized.Name;
+        row.TreeJson = normalized.TreeJson;
+        row.ValuesJson = normalized.ValuesJson;
+        row.UpdatedAt = DateTime.UtcNow;
+
+        _db.AuditLogs.Add(new AiAuditLog
+        {
+            Action = "PropertyDocumentSaved",
+            Initiator = initiator,
+            Details = $"Saved property document {row.Id} ({row.Name})."
+        });
+
+        await _db.SaveChangesAsync();
+        return PropertySaveResult.Ok(PropertyDocumentLogic.ToDto(row));
     }
 }

@@ -8,6 +8,11 @@ import {
   UserAccount,
   DatabaseOverview,
 } from '../models/banking.models';
+import {
+  PropertyDocument,
+  PropertyDocumentSummary,
+  PropertySaveResult,
+} from '../models/property-document.model';
 import { AuthService } from '../auth/auth.service';
 
 @Injectable({
@@ -179,6 +184,16 @@ export class BankingStateService {
     }, 4500);
   }
 
+  private async readError(res: Response): Promise<string> {
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body.message) return body.message;
+    } catch {
+      // The response was not JSON.
+    }
+    return 'The property document was not saved.';
+  }
+
   private async api(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
     const tokenAtSend = this.auth.token();
@@ -275,6 +290,46 @@ export class BankingStateService {
       // Continue
     }
     return false;
+  }
+
+  public async listPropertyDocuments(): Promise<PropertyDocumentSummary[] | null> {
+    try {
+      const res = await this.api('/admin/property-documents');
+      if (!res.ok) return null;
+      return (await res.json()) as PropertyDocumentSummary[];
+    } catch {
+      return null;
+    }
+  }
+
+  public async getPropertyDocument(id: string): Promise<PropertyDocument | null> {
+    try {
+      const res = await this.api(`/admin/property-documents/${encodeURIComponent(id)}`);
+      if (!res.ok) return null;
+      return (await res.json()) as PropertyDocument;
+    } catch {
+      return null;
+    }
+  }
+
+  public async savePropertyDocument(doc: PropertyDocument): Promise<PropertySaveResult> {
+    try {
+      const res = await this.api(`/admin/property-documents/${encodeURIComponent(doc.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: doc.name,
+          tree: doc.tree,
+          values: doc.values,
+        }),
+      });
+      if (!res.ok) {
+        return { document: null, error: await this.readError(res) };
+      }
+      return { document: (await res.json()) as PropertyDocument, error: null };
+    } catch {
+      return { document: null, error: 'The property service is unreachable.' };
+    }
   }
 
   public async createAdminTransaction(tx: Partial<BankTransaction>): Promise<boolean> {
